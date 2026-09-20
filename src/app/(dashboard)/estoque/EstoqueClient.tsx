@@ -20,6 +20,7 @@ import {
 } from 'lucide-react'
 import { createStockMovement, updateProduct, deleteProduct } from './actions'
 import { ImageUploadInput } from '@/components/ImageUploadInput'
+import { useConfirm } from '@/components/ConfirmDialog'
 
 interface Product {
   id: string
@@ -58,6 +59,7 @@ export function EstoqueClient({
   const [isPending, startTransition] = useTransition()
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const { confirm, ConfirmDialog } = useConfirm()
 
   const lowStockProducts = localProducts.filter((p) => Number(p.current_stock) <= Number(p.min_stock))
 
@@ -112,19 +114,15 @@ export function EstoqueClient({
   }
 
   const handleDelete = (id: string, name: string) => {
-    if (!confirm(`Deseja realmente remover o produto "${name}" do acervo?`)) return
-    
-    // Remoção instantânea otimista
-    setLocalProducts((prev) => prev.filter((p) => p.id !== id))
-    setActionLoadingId(id)
-
-    startTransition(async () => {
-      const res = await deleteProduct(id)
-      if (res?.error) {
-        alert(res.error)
-      }
-      setActionLoadingId(null)
-      router.refresh()
+    confirm(`Deseja realmente remover o produto "${name}" do acervo?`).then(ok => {
+      if (!ok) return
+      setLocalProducts((prev) => prev.filter((p) => p.id !== id))
+      setActionLoadingId(id)
+      startTransition(async () => {
+        await deleteProduct(id)
+        setActionLoadingId(null)
+        router.refresh()
+      })
     })
   }
 
@@ -136,6 +134,7 @@ export function EstoqueClient({
 
   return (
     <div className="space-y-6">
+      <ConfirmDialog />
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>

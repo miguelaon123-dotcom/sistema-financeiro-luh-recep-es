@@ -21,6 +21,7 @@ import {
 import { createTransaction, updateTransaction, updateTransactionStatus, deleteTransaction } from './actions'
 import { Caixinha } from '../caixinhas/actions'
 import { CaixinhasFinanceiras } from '@/components/CaixinhasFinanceiras'
+import { useConfirm } from '@/components/ConfirmDialog'
 
 interface Transaction {
   id: string
@@ -72,6 +73,7 @@ export function FinanceiroClient({
   const [isPending, startTransition] = useTransition()
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const { confirm, ConfirmDialog } = useConfirm()
 
   // Cálculos dinâmicos
   const pendingIncome = localTransactions
@@ -147,22 +149,21 @@ export function FinanceiroClient({
   }
 
   const handleDelete = (id: string, desc: string) => {
-    if (!confirm(`Deseja realmente remover a transação "${desc}"?`)) return
-    
-    // Otimista instantâneo
-    setLocalTransactions((prev) => prev.filter((t) => t.id !== id))
-    setActionLoadingId(id)
-
-    startTransition(async () => {
-      const res = await deleteTransaction(id)
-      if (res?.error) alert(res.error)
-      setActionLoadingId(null)
-      router.refresh()
+    confirm(`Deseja realmente remover a transação "${desc}"?`).then(ok => {
+      if (!ok) return
+      setLocalTransactions((prev) => prev.filter((t) => t.id !== id))
+      setActionLoadingId(id)
+      startTransition(async () => {
+        await deleteTransaction(id)
+        setActionLoadingId(null)
+        router.refresh()
+      })
     })
   }
 
   return (
     <div className="space-y-6">
+      <ConfirmDialog />
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>

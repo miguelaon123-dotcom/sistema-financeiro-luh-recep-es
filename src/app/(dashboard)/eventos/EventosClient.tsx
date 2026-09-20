@@ -43,6 +43,7 @@ import {
   EventStaffInput,
   receiveEventContractPayment,
 } from './actions'
+import { useConfirm } from '@/components/ConfirmDialog'
 
 interface EventTransaction {
   id: string
@@ -136,6 +137,7 @@ export function EventosClient({
   const [isPending, startTransition] = useTransition()
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const { confirm, ConfirmDialog } = useConfirm()
 
   // Modais de Materiais, Devolução e Escala de Equipe
   const [allocatingEvent, setAllocatingEvent] = useState<EventItem | null>(null)
@@ -287,15 +289,15 @@ export function EventosClient({
 
   // Exclusão Instantânea
   const handleDelete = (id: string, title: string) => {
-    if (!confirm(`Deseja realmente excluir o evento "${title}"?`)) return
-    setActionLoadingId(id)
-    // Atualização otimista imediata: some da lista na hora!
-    setLocalEvents((prev) => prev.filter((e) => e.id !== id))
-    startTransition(async () => {
-      const res = await deleteEvent(id)
-      if (res?.error) alert(res.error)
-      setActionLoadingId(null)
-      router.refresh()
+    confirm(`Deseja realmente excluir o evento "${title}"?`).then(ok => {
+      if (!ok) return
+      setActionLoadingId(id)
+      setLocalEvents((prev) => prev.filter((e) => e.id !== id))
+      startTransition(async () => {
+        await deleteEvent(id)
+        setActionLoadingId(null)
+        router.refresh()
+      })
     })
   }
 
@@ -559,6 +561,7 @@ Por favor, confirmem presença com antecedência! ✅`
 
   return (
     <div className="space-y-6">
+      <ConfirmDialog />
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>

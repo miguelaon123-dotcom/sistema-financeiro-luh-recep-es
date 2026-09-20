@@ -4,6 +4,7 @@ import { useState, useTransition, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { Plus, Search, Users, Phone, Mail, FileText, Trash2, Pencil, X, Check } from 'lucide-react'
 import { createContact, updateContact, deleteContact } from './actions'
+import { useConfirm } from '@/components/ConfirmDialog'
 
 interface Contact {
   id: string
@@ -38,6 +39,7 @@ export function ClientesClient({
   const [isPending, startTransition] = useTransition()
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const { confirm, ConfirmDialog } = useConfirm()
 
   const filteredContacts = localContacts.filter((c) => {
     const matchesSearch =
@@ -73,19 +75,21 @@ export function ClientesClient({
   }
 
   const handleDelete = (id: string, name: string) => {
-    if (!confirm(`Deseja realmente remover o contato "${name}"?`)) return
-    setDeletingId(id)
-    // Atualização otimista imediata: some da tela no mesmo instante!
-    setLocalContacts((prev) => prev.filter((c) => c.id !== id))
-    startTransition(async () => {
-      await deleteContact(id)
-      setDeletingId(null)
-      router.refresh()
+    confirm(`Deseja realmente remover o contato "${name}"?`).then(ok => {
+      if (!ok) return
+      setDeletingId(id)
+      setLocalContacts((prev) => prev.filter((c) => c.id !== id))
+      startTransition(async () => {
+        await deleteContact(id)
+        setDeletingId(null)
+        router.refresh()
+      })
     })
   }
 
   return (
     <div className="space-y-6">
+      <ConfirmDialog />
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>

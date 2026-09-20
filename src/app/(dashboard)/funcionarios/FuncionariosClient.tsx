@@ -44,6 +44,7 @@ import {
   payAllEmployeeDailyRates,
   revertStaffDailyPayment,
 } from './actions'
+import { useConfirm } from '@/components/ConfirmDialog'
 
 export interface EmployeeRole {
   id: string
@@ -125,6 +126,7 @@ export function FuncionariosClient({
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null)
   const [copiedPixId, setCopiedPixId] = useState<string | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
+  const { confirm, ConfirmDialog } = useConfirm()
 
   // Estado para valor padrão ao trocar a função no formulário de funcionário
   const [selectedRoleDailyRate, setSelectedRoleDailyRate] = useState<number | null>(null)
@@ -176,30 +178,33 @@ export function FuncionariosClient({
   }
 
   const handlePayAllDailies = (employeeId: string) => {
-    if (!confirm('Deseja confirmar o pagamento de todas as diárias pendentes deste colaborador e lançar a quitação no Financeiro?')) return
-    setActionLoadingId(employeeId)
-    setLocalStaffAssignments((prev) =>
-      prev.map((a) => (a.employee_id === employeeId ? { ...a, payment_status: 'paid', paid_at: new Date().toISOString() } : a))
-    )
-    startTransition(async () => {
-      const res = await payAllEmployeeDailyRates(employeeId)
-      if (res?.error) alert(res.error)
-      setActionLoadingId(null)
-      router.refresh()
+    confirm('Deseja confirmar o pagamento de todas as diárias pendentes deste colaborador e lançar a quitação no Financeiro?').then(ok => {
+      if (!ok) return
+      setActionLoadingId(employeeId)
+      setLocalStaffAssignments((prev) =>
+        prev.map((a) => (a.employee_id === employeeId ? { ...a, payment_status: 'paid', paid_at: new Date().toISOString() } : a))
+      )
+      startTransition(async () => {
+        const res = await payAllEmployeeDailyRates(employeeId)
+        if (res?.error) alert(res.error)
+        setActionLoadingId(null)
+        router.refresh()
+      })
     })
   }
 
   const handleRevertPayment = (assignmentId: string) => {
-    if (!confirm('Deseja estornar e reabrir o pagamento desta diária?')) return
-    setActionLoadingId(assignmentId)
-    setLocalStaffAssignments((prev) =>
-      prev.map((a) => (a.id === assignmentId ? { ...a, payment_status: 'pending', paid_at: null } : a))
-    )
-    startTransition(async () => {
-      const res = await revertStaffDailyPayment(assignmentId)
-      if (res?.error) alert(res.error)
-      setActionLoadingId(null)
-      router.refresh()
+    confirm('Deseja estornar e reabrir o pagamento desta diária?').then(ok => {
+      if (!ok) return
+      setActionLoadingId(assignmentId)
+      setLocalStaffAssignments((prev) =>
+        prev.map((a) => (a.id === assignmentId ? { ...a, payment_status: 'pending', paid_at: null } : a))
+      )
+      startTransition(async () => {
+        await revertStaffDailyPayment(assignmentId)
+        setActionLoadingId(null)
+        router.refresh()
+      })
     })
   }
 
@@ -284,14 +289,15 @@ export function FuncionariosClient({
 
   // Excluir Colaborador Instantâneo
   const handleDelete = (id: string, name: string) => {
-    if (!confirm(`Deseja realmente excluir o colaborador "${name}"?`)) return
-    setActionLoadingId(id)
-    // Atualização otimista imediata: remove da tela na hora!
-    setLocalEmployees((prev) => prev.filter((e) => e.id !== id))
-    startTransition(async () => {
-      await deleteEmployee(id)
-      setActionLoadingId(null)
-      router.refresh()
+    confirm(`Deseja realmente excluir o colaborador "${name}"?`).then(ok => {
+      if (!ok) return
+      setActionLoadingId(id)
+      setLocalEmployees((prev) => prev.filter((e) => e.id !== id))
+      startTransition(async () => {
+        await deleteEmployee(id)
+        setActionLoadingId(null)
+        router.refresh()
+      })
     })
   }
 
@@ -319,17 +325,16 @@ export function FuncionariosClient({
 
   // Excluir Função / Categoria Instantâneo
   const handleDeleteRole = (id: string, name: string) => {
-    if (!confirm(`Deseja realmente excluir a função/categoria "${name}"?`)) return
-    setRoleActionLoadingId(id)
-    // Atualização otimista imediata na lista de categorias
-    setLocalRoles((prev) => prev.filter((r) => r.id !== id))
-    startTransition(async () => {
-      await deleteEmployeeRole(id)
-      setRoleActionLoadingId(null)
-      if (editingRole?.id === id) {
-        setEditingRole(null)
-      }
-      router.refresh()
+    confirm(`Deseja realmente excluir a função/categoria "${name}"?`).then(ok => {
+      if (!ok) return
+      setRoleActionLoadingId(id)
+      setLocalRoles((prev) => prev.filter((r) => r.id !== id))
+      startTransition(async () => {
+        await deleteEmployeeRole(id)
+        setRoleActionLoadingId(null)
+        if (editingRole?.id === id) setEditingRole(null)
+        router.refresh()
+      })
     })
   }
 
@@ -342,6 +347,7 @@ export function FuncionariosClient({
 
   return (
     <div className="space-y-6">
+      <ConfirmDialog />
       {/* Banner de Migração SQL se necessário */}
       {!tableCreatedInDb && (
         <div className="rounded-2xl border border-[#fed7aa] bg-[#fffaf5] p-4 text-[#9a3412] flex items-start justify-between gap-3 shadow-xs">

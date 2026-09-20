@@ -16,6 +16,7 @@ import {
   Key,
 } from 'lucide-react'
 import { createUser, toggleUserStatus, deleteUser } from './actions'
+import { useConfirm } from '@/components/ConfirmDialog'
 
 interface UserItem {
   id: string
@@ -45,6 +46,7 @@ export function ConfiguracoesClient({
   const [isPending, startTransition] = useTransition()
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [loadingId, setLoadingId] = useState<string | null>(null)
+  const { confirm, ConfirmDialog } = useConfirm()
 
   const handleCreateUser = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
@@ -79,17 +81,15 @@ export function ConfiguracoesClient({
   }
 
   const handleDeleteUser = (id: string, name: string) => {
-    if (!confirm(`Tem certeza que deseja excluir permanentemente o usuário "${name}"?`)) return
-    
-    // Otimista instantâneo
-    setLocalUsers((prev) => prev.filter((u) => u.id !== id))
-    setLoadingId(id)
-
-    startTransition(async () => {
-      const res = await deleteUser(id)
-      if (res?.error) alert(res.error)
-      setLoadingId(null)
-      router.refresh()
+    confirm(`Tem certeza que deseja excluir permanentemente o usuário "${name}"?`).then(ok => {
+      if (!ok) return
+      setLocalUsers((prev) => prev.filter((u) => u.id !== id))
+      setLoadingId(id)
+      startTransition(async () => {
+        await deleteUser(id)
+        setLoadingId(null)
+        router.refresh()
+      })
     })
   }
 
@@ -97,6 +97,7 @@ export function ConfiguracoesClient({
 
   return (
     <div className="space-y-8 max-w-5xl">
+      <ConfirmDialog />
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold tracking-tight text-[#1d1d1f]">Configurações do Sistema</h1>
