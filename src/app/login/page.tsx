@@ -1,5 +1,6 @@
 import { login } from './actions'
 import { LockKeyhole } from 'lucide-react'
+import Image from 'next/image'
 
 const errorMessages: Record<string, string> = {
   credenciais_invalidas: 'E-mail ou senha incorretos.',
@@ -19,14 +20,16 @@ export default async function LoginPage({
     <div className="flex min-h-screen flex-col items-center justify-center bg-[#f5f5f7] px-4">
       
       {/* Logo / Marca */}
-      <div className="mb-8 text-center">
-        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-[#1d1d1f] shadow-sm">
-          <span className="text-2xl font-bold text-[#d4af37]">L</span>
-        </div>
-        <h1 className="text-2xl font-bold tracking-tight text-[#1d1d1f]">
-          Luh Recepções
-        </h1>
-        <p className="mt-0.5 text-xs font-medium uppercase tracking-wider text-[#86868b]">
+      <div className="mb-8 text-center flex flex-col items-center">
+        <Image
+          src="/logo-luh.jpg"
+          alt="Luh Recepções"
+          width={200}
+          height={80}
+          className="object-contain mb-2"
+          priority
+        />
+        <p className="mt-1 text-xs font-medium uppercase tracking-wider text-[#86868b]">
           Sistema Integrado ERP
         </p>
       </div>

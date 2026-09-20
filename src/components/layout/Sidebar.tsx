@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import Image from 'next/image'
 import {
   LayoutDashboard,
   Wallet,
@@ -38,25 +39,34 @@ export function Sidebar() {
         collapsed ? 'w-20' : 'w-64'
       }`}
     >
-      <div className="flex h-16 items-center justify-between px-6 border-b border-[#f2f2f7]">
+      <div className="flex h-16 items-center justify-between px-4 border-b border-[#f2f2f7]">
         {!collapsed && (
-          <div className="flex items-center gap-2.5">
-            <div className="h-8 w-8 rounded-xl bg-[#1d1d1f] flex items-center justify-center text-white font-semibold text-sm shadow-sm">
-              <span className="text-[#d4af37]">L</span>
-            </div>
-            <div>
-              <h1 className="truncate text-base font-semibold tracking-tight text-[#1d1d1f] leading-none">
-                Luh Recepções
-              </h1>
-              <span className="text-[11px] font-medium tracking-wider uppercase text-[#86868b]">
-                Gestão ERP
-              </span>
-            </div>
+          <div className="flex items-center gap-2">
+            <Image
+              src="/logo-luh.jpg"
+              alt="Luh Recepções"
+              width={140}
+              height={50}
+              className="object-contain"
+              priority
+            />
+          </div>
+        )}
+        {collapsed && (
+          <div className="mx-auto">
+            <Image
+              src="/logo-luh.jpg"
+              alt="Luh"
+              width={36}
+              height={36}
+              className="object-contain rounded-lg"
+              priority
+            />
           </div>
         )}
         <button
           onClick={() => setCollapsed(!collapsed)}
-          className="rounded-lg p-1.5 text-[#86868b] hover:bg-[#f5f5f7] hover:text-[#1d1d1f] transition-colors"
+          className="rounded-lg p-1.5 text-[#86868b] hover:bg-[#f5f5f7] hover:text-[#1d1d1f] transition-colors flex-shrink-0"
         >
           {collapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
         </button>
