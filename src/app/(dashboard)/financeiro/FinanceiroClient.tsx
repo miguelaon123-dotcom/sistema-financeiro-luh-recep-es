@@ -1,0 +1,649 @@
+'use client'
+
+import { useState, useTransition, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
+import {
+  ArrowUpCircle,
+  ArrowDownCircle,
+  Search,
+  Filter,
+  CheckCircle2,
+  Trash2,
+  Pencil,
+  X,
+  Calendar,
+  DollarSign,
+  User,
+  PartyPopper,
+  Receipt,
+  Wallet,
+} from 'lucide-react'
+import { createTransaction, updateTransaction, updateTransactionStatus, deleteTransaction } from './actions'
+import { Caixinha } from '../caixinhas/actions'
+import { CaixinhasFinanceiras } from '@/components/CaixinhasFinanceiras'
+
+interface Transaction {
+  id: string
+  amount: number
+  type: 'income' | 'expense'
+  status: 'pending' | 'paid' | 'late' | 'canceled'
+  description: string
+  due_date: string
+  paid_date?: string | null
+  contacts?: { id: string; name: string } | null
+  events?: { id: string; title: string } | null
+}
+
+export function FinanceiroClient({
+  transactions,
+  contacts,
+  events,
+  initialAction,
+  initialTab = 'extrato',
+  caixinhas = [],
+}: {
+  transactions: Transaction[]
+  contacts: { id: string; name: string }[]
+  events: { id: string; title: string }[]
+  initialAction?: string
+  initialTab?: string
+  caixinhas?: Caixinha[]
+}) {
+  const router = useRouter()
+  const [localTransactions, setLocalTransactions] = useState<Transaction[]>(transactions)
+
+  useEffect(() => {
+    setLocalTransactions(transactions)
+  }, [transactions])
+
+  const [activeTab, setActiveTab] = useState<'extrato' | 'caixinhas'>(
+    initialTab === 'caixinhas' ? 'caixinhas' : 'extrato'
+  )
+  const [searchTerm, setSearchTerm] = useState('')
+  const [filterStatus, setFilterStatus] = useState<string>('all')
+  const [modalType, setModalType] = useState<'income' | 'expense' | null>(
+    initialAction === 'nova-receita'
+      ? 'income'
+      : initialAction === 'nova-despesa'
+      ? 'expense'
+      : null
+  )
+  const [editingTx, setEditingTx] = useState<Transaction | null>(null)
+  const [isPending, startTransition] = useTransition()
+  const [actionLoadingId, setActionLoadingId] = useState<string | null>(null)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
+
+  // Cálculos dinâmicos
+  const pendingIncome = localTransactions
+    .filter((t) => t.type === 'income' && t.status === 'pending')
+    .reduce((acc, t) => acc + Number(t.amount), 0)
+
+  const pendingExpense = localTransactions
+    .filter((t) => t.type === 'expense' && t.status === 'pending')
+    .reduce((acc, t) => acc + Number(t.amount), 0)
+
+  const totalReceived = localTransactions
+    .filter((t) => t.type === 'income' && t.status === 'paid')
+    .reduce((acc, t) => acc + Number(t.amount), 0)
+
+  const totalPaid = localTransactions
+    .filter((t) => t.type === 'expense' && t.status === 'paid')
+    .reduce((acc, t) => acc + Number(t.amount), 0)
+
+  const projectedBalance = totalReceived - totalPaid + (pendingIncome - pendingExpense)
+  const totalInCaixinhas = (caixinhas || []).reduce((acc, c) => acc + Number(c.current_balance || 0), 0)
+
+  // Filtragem
+  const filteredTransactions = localTransactions.filter((tx) => {
+    const matchesSearch =
+      tx.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      tx.contacts?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      tx.events?.title?.toLowerCase().includes(searchTerm.toLowerCase())
+
+    if (!matchesSearch) return false
+
+    if (filterStatus === 'all') return true
+    if (filterStatus === 'income') return tx.type === 'income'
+    if (filterStatus === 'expense') return tx.type === 'expense'
+    if (filterStatus === 'pending') return tx.status === 'pending'
+    if (filterStatus === 'paid') return tx.status === 'paid'
+    return true
+  })
+
+  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    setErrorMessage(null)
+    const form = e.currentTarget
+    const formData = new FormData(form)
+
+    startTransition(async () => {
+      const res = editingTx
+        ? await updateTransaction(formData)
+        : await createTransaction(formData)
+      if (res?.error) {
+        setErrorMessage(res.error)
+      } else {
+        setModalType(null)
+        setEditingTx(null)
+        form.reset()
+        router.refresh()
+      }
+    })
+  }
+
+  const handleTogglePaid = (id: string, currentStatus: string) => {
+    const nextStatus = currentStatus === 'paid' ? 'pending' : 'paid'
+    // Otimista
+    setLocalTransactions((prev) =>
+      prev.map((t) => (t.id === id ? { ...t, status: nextStatus as any } : t))
+    )
+    setActionLoadingId(id)
+    startTransition(async () => {
+      const res = await updateTransactionStatus(id, nextStatus)
+      if (res?.error) alert(res.error)
+      setActionLoadingId(null)
+      router.refresh()
+    })
+  }
+
+  const handleDelete = (id: string, desc: string) => {
+    if (!confirm(`Deseja realmente remover a transação "${desc}"?`)) return
+    
+    // Otimista instantâneo
+    setLocalTransactions((prev) => prev.filter((t) => t.id !== id))
+    setActionLoadingId(id)
+
+    startTransition(async () => {
+      const res = await deleteTransaction(id)
+      if (res?.error) alert(res.error)
+      setActionLoadingId(null)
+      router.refresh()
+    })
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-[#1d1d1f]">Financeiro</h1>
+          <p className="text-sm text-[#6e6e73]">
+            Controle de receitas, despesas e fluxo de caixa da Luh Recepções.
+          </p>
+        </div>
+        <div className="flex items-center gap-2.5">
+          <button
+            onClick={() => {
+              setErrorMessage(null)
+              setModalType('income')
+            }}
+            className="flex items-center space-x-1.5 rounded-xl bg-[#e8f8ee] px-3.5 py-2 text-xs font-semibold text-[#1a7f37] hover:bg-[#d5f3df] transition-all border border-[#b4e8c7] cursor-pointer"
+          >
+            <ArrowUpCircle size={15} strokeWidth={2.2} />
+            <span>Nova Receita</span>
+          </button>
+          <button
+            onClick={() => {
+              setErrorMessage(null)
+              setModalType('expense')
+            }}
+            className="flex items-center space-x-1.5 rounded-xl bg-[#feeceb] px-3.5 py-2 text-xs font-semibold text-[#cf222e] hover:bg-[#fcd7d5] transition-all border border-[#f8b4b1] cursor-pointer"
+          >
+            <ArrowDownCircle size={15} strokeWidth={2.2} />
+            <span>Nova Despesa</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="rounded-2xl border border-[#e5e5ea] bg-white p-5 shadow-xs">
+          <span className="text-xs font-semibold uppercase tracking-wider text-[#1a7f37]">
+            A Receber (Pendente)
+          </span>
+          <p className="mt-2 text-2xl font-bold tracking-tight text-[#1a7f37]">
+            R$ {pendingIncome.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+          </p>
+          <span className="mt-1 block text-xs text-[#86868b]">Contratos e locações pendentes</span>
+        </div>
+
+        <div className="rounded-2xl border border-[#e5e5ea] bg-white p-5 shadow-xs">
+          <span className="text-xs font-semibold uppercase tracking-wider text-[#cf222e]">
+            A Pagar (Pendente)
+          </span>
+          <p className="mt-2 text-2xl font-bold tracking-tight text-[#cf222e]">
+            R$ {pendingExpense.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+          </p>
+          <span className="mt-1 block text-xs text-[#86868b]">Fornecedores e custos fixos</span>
+        </div>
+
+        <div
+          onClick={() => setActiveTab('caixinhas')}
+          className="rounded-2xl border border-[#e5e5ea] bg-white p-5 shadow-xs hover:border-[#1d1d1f]/40 cursor-pointer transition-all"
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold uppercase tracking-wider text-[#1d1d1f]">
+              Caixinhas
+            </span>
+            <span className="rounded-md bg-[#f5f5f7] px-1.5 py-0.5 text-[10px] font-bold text-[#1d1d1f]">
+              {caixinhas.length} ativas
+            </span>
+          </div>
+          <p className="mt-2 text-2xl font-bold tracking-tight text-[#1d1d1f]">
+            R$ {totalInCaixinhas.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+          </p>
+          <span className="mt-1 block text-xs text-[#86868b]">Reservas e metas separadas →</span>
+        </div>
+
+        <div className="rounded-2xl border border-[#e5e5ea] bg-white p-5 shadow-xs">
+          <span className="text-xs font-semibold uppercase tracking-wider text-[#b8860b]">
+            Saldo Projetado
+          </span>
+          <p
+            className={`mt-2 text-2xl font-bold tracking-tight ${
+              projectedBalance >= 0 ? 'text-[#1d1d1f]' : 'text-[#cf222e]'
+            }`}
+          >
+            R$ {projectedBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+          </p>
+          <span className="mt-1 block text-xs text-[#86868b]">Previsão de encerramento</span>
+        </div>
+      </div>
+
+      {/* Abas de Navegação */}
+      <div className="flex items-center gap-2 border-b border-[#f2f2f7] pb-3">
+        <button
+          onClick={() => setActiveTab('extrato')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+            activeTab === 'extrato'
+              ? 'bg-[#1d1d1f] text-white shadow-xs'
+              : 'bg-white text-[#6e6e73] hover:text-[#1d1d1f] border border-[#e5e5ea]'
+          }`}
+        >
+          <Receipt size={14} />
+          <span>Extrato de Lançamentos ({transactions.length})</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('caixinhas')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+            activeTab === 'caixinhas'
+              ? 'bg-[#1d1d1f] text-white shadow-xs'
+              : 'bg-white text-[#6e6e73] hover:text-[#1d1d1f] border border-[#e5e5ea]'
+          }`}
+        >
+          <Wallet size={14} />
+          <span>Caixinhas ({caixinhas.length})</span>
+        </button>
+      </div>
+
+      {/* Conteúdo Dinâmico por Aba */}
+      {activeTab === 'caixinhas' ? (
+        <CaixinhasFinanceiras
+          initialCaixinhas={caixinhas}
+          totalCashBalance={totalReceived - totalPaid}
+        />
+      ) : (
+        /* Transactions Table Section */
+        <div className="rounded-2xl border border-[#e5e5ea] bg-white shadow-xs overflow-hidden">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-[#f2f2f7] p-4 gap-3">
+          <div className="relative w-full max-w-sm">
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-[#86868b]" />
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Buscar por descrição, cliente ou evento..."
+              className="w-full rounded-xl border border-transparent bg-[#f5f5f7] py-2 pl-10 pr-3.5 text-sm text-[#1d1d1f] placeholder-[#86868b] focus:border-[#d1d1d6] focus:bg-white focus:outline-none transition-all"
+            />
+          </div>
+
+          {/* Filtros em abas */}
+          <div className="flex items-center gap-1 bg-[#f5f5f7] p-1 rounded-xl overflow-x-auto">
+            {[
+              { label: 'Todos', val: 'all' },
+              { label: 'Receitas', val: 'income' },
+              { label: 'Despesas', val: 'expense' },
+              { label: 'Pendentes', val: 'pending' },
+              { label: 'Pagos', val: 'paid' },
+            ].map((tab) => (
+              <button
+                key={tab.val}
+                onClick={() => setFilterStatus(tab.val)}
+                className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all whitespace-nowrap cursor-pointer ${
+                  filterStatus === tab.val
+                    ? 'bg-white text-[#1d1d1f] shadow-xs'
+                    : 'text-[#6e6e73] hover:text-[#1d1d1f]'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm text-[#1d1d1f]">
+            <thead className="bg-[#f9f9fb] text-xs font-semibold uppercase tracking-wider text-[#6e6e73] border-b border-[#f2f2f7]">
+              <tr>
+                <th className="px-5 py-3.5 font-medium">Vencimento</th>
+                <th className="px-5 py-3.5 font-medium">Descrição</th>
+                <th className="px-5 py-3.5 font-medium">Contato</th>
+                <th className="px-5 py-3.5 font-medium">Evento</th>
+                <th className="px-5 py-3.5 font-medium text-right">Valor (R$)</th>
+                <th className="px-5 py-3.5 font-medium text-center">Status</th>
+                <th className="px-5 py-3.5 font-medium text-right">Ações</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[#f2f2f7]">
+              {filteredTransactions.length > 0 ? (
+                filteredTransactions.map((tx) => (
+                  <tr key={tx.id} className="hover:bg-[#fbfbfd] transition-colors">
+                    <td className="px-5 py-3.5 whitespace-nowrap text-[#6e6e73]">
+                      {new Date(tx.due_date + 'T00:00:00').toLocaleDateString('pt-BR')}
+                    </td>
+                    <td className="px-5 py-3.5 font-medium text-[#1d1d1f]">
+                      {tx.description || 'Sem descrição'}
+                    </td>
+                    <td className="px-5 py-3.5 text-[#6e6e73]">{tx.contacts?.name || '—'}</td>
+                    <td className="px-5 py-3.5 text-[#1d1d1f] font-medium">
+                      {tx.events?.title || '—'}
+                    </td>
+                    <td
+                      className={`px-5 py-3.5 text-right font-semibold whitespace-nowrap ${
+                        tx.type === 'income' ? 'text-[#1a7f37]' : 'text-[#cf222e]'
+                      }`}
+                    >
+                      {tx.type === 'income' ? '+' : '-'} R${' '}
+                      {Math.abs(Number(tx.amount)).toLocaleString('pt-BR', {
+                        minimumFractionDigits: 2,
+                      })}
+                    </td>
+                    <td className="px-5 py-3.5 text-center whitespace-nowrap">
+                      <button
+                        onClick={() => handleTogglePaid(tx.id, tx.status)}
+                        disabled={actionLoadingId === tx.id}
+                        className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold cursor-pointer transition-transform hover:scale-105 ${
+                          tx.status === 'paid'
+                            ? 'bg-[#e8f8ee] text-[#1a7f37]'
+                            : tx.status === 'pending'
+                            ? 'bg-[#fff8e6] text-[#b8860b]'
+                            : tx.status === 'late'
+                            ? 'bg-[#feeceb] text-[#cf222e]'
+                            : 'bg-[#f5f5f7] text-[#6e6e73]'
+                        }`}
+                        title="Clique para alternar entre Pago e Pendente"
+                      >
+                        {tx.status === 'paid' && <CheckCircle2 size={12} />}
+                        {tx.status === 'paid'
+                          ? 'Pago'
+                          : tx.status === 'pending'
+                          ? 'Pendente'
+                          : tx.status === 'late'
+                          ? 'Atrasado'
+                          : 'Cancelado'}
+                      </button>
+                    </td>
+                    <td className="px-5 py-3.5 text-right whitespace-nowrap">
+                      <div className="flex items-center justify-end gap-1.5">
+                        <button
+                          onClick={() => handleTogglePaid(tx.id, tx.status)}
+                          disabled={actionLoadingId === tx.id}
+                          className={`text-xs px-2 py-1 rounded-lg transition-colors cursor-pointer ${
+                            tx.status === 'paid'
+                              ? 'text-[#86868b] hover:bg-[#f5f5f7]'
+                              : 'text-[#1a7f37] bg-[#e8f8ee] hover:bg-[#d5f3df] font-semibold'
+                          }`}
+                        >
+                          {tx.status === 'paid' ? 'Reabrir' : 'Dar Baixa'}
+                        </button>
+                        <button
+                          onClick={() => {
+                            setErrorMessage(null)
+                            setEditingTx(tx)
+                            setModalType(tx.type)
+                          }}
+                          className="rounded-lg p-1 text-[#86868b] hover:bg-[#f5f5f7] hover:text-[#1d1d1f] transition-colors cursor-pointer"
+                          title="Editar lançamento"
+                        >
+                          <Pencil size={15} />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(tx.id, tx.description)}
+                          disabled={actionLoadingId === tx.id}
+                          className="rounded-lg p-1 text-[#86868b] hover:bg-[#feeceb] hover:text-[#ff3b30] transition-colors cursor-pointer"
+                          title="Excluir lançamento"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={7} className="px-5 py-12 text-center text-[#86868b]">
+                    Nenhuma transação financeira encontrada.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      )}
+
+      {/* Modal Nova Receita / Nova Despesa / Editar */}
+      {modalType && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+          <div className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl border border-[#e5e5ea] animate-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between pb-4 border-b border-[#f2f2f7]">
+              <div className="flex items-center gap-2">
+                {modalType === 'income' ? (
+                  <div className="rounded-xl bg-[#e8f8ee] p-2 text-[#1a7f37]">
+                    <ArrowUpCircle size={20} />
+                  </div>
+                ) : (
+                  <div className="rounded-xl bg-[#feeceb] p-2 text-[#cf222e]">
+                    <ArrowDownCircle size={20} />
+                  </div>
+                )}
+                <div>
+                  <h3 className="text-lg font-bold text-[#1d1d1f]">
+                    {editingTx
+                      ? modalType === 'income'
+                        ? 'Editar Receita'
+                        : 'Editar Despesa'
+                      : modalType === 'income'
+                      ? 'Nova Receita'
+                      : 'Nova Despesa'}
+                  </h3>
+                  <p className="text-xs text-[#6e6e73]">
+                    {editingTx
+                      ? 'Atualize as informações do lançamento e confirme.'
+                      : modalType === 'income'
+                      ? 'Lançamento de entrada no caixa ou contrato de evento.'
+                      : 'Lançamento de pagamento a fornecedor ou custo operacional.'}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setModalType(null)
+                  setEditingTx(null)
+                }}
+                className="rounded-xl p-1.5 text-[#86868b] hover:bg-[#f5f5f7] hover:text-[#1d1d1f] transition-colors cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {errorMessage && (
+              <div className="mt-4 rounded-xl border border-[#feeceb] bg-[#fff5f5] p-3 text-xs text-[#cf222e]">
+                {errorMessage}
+              </div>
+            )}
+
+            <form
+              key={editingTx?.id || 'new-tx'}
+              onSubmit={handleSubmit}
+              className="mt-5 space-y-4"
+            >
+              <input type="hidden" name="type" value={modalType} />
+              {editingTx && <input type="hidden" name="id" value={editingTx.id} />}
+
+              <div>
+                <label className="block text-xs font-semibold text-[#1d1d1f] mb-1">
+                  Descrição do Lançamento *
+                </label>
+                <input
+                  type="text"
+                  name="description"
+                  required
+                  defaultValue={editingTx?.description || ''}
+                  placeholder={
+                    modalType === 'income'
+                      ? 'Ex: Entrada Contrato Casamento Juliana'
+                      : 'Ex: Compra de Taças ou Pagamento DJ'
+                  }
+                  className="w-full rounded-xl border border-[#d1d1d6] bg-white px-3.5 py-2 text-sm text-[#1d1d1f] placeholder-[#86868b] focus:border-[#1d1d1f] focus:outline-none focus:ring-1 focus:ring-[#1d1d1f] transition-all"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-[#1d1d1f] mb-1">
+                    Valor Total (R$) *
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    name="amount"
+                    required
+                    defaultValue={editingTx ? Math.abs(Number(editingTx.amount)) : ''}
+                    placeholder="0,00"
+                    className="w-full rounded-xl border border-[#d1d1d6] bg-white px-3.5 py-2 text-sm text-[#1d1d1f] placeholder-[#86868b] focus:border-[#1d1d1f] focus:outline-none focus:ring-1 focus:ring-[#1d1d1f] transition-all"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-[#1d1d1f] mb-1">
+                    Data de Vencimento *
+                  </label>
+                  <input
+                    type="date"
+                    name="due_date"
+                    required
+                    defaultValue={
+                      editingTx?.due_date
+                        ? editingTx.due_date
+                        : new Date().toISOString().split('T')[0]
+                    }
+                    className="w-full rounded-xl border border-[#d1d1d6] bg-white px-3.5 py-2 text-sm text-[#1d1d1f] focus:border-[#1d1d1f] focus:outline-none focus:ring-1 focus:ring-[#1d1d1f] transition-all"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-[#1d1d1f] mb-1">
+                    Contato / Cliente Vinculado
+                  </label>
+                  <select
+                    name="contact_id"
+                    defaultValue={editingTx?.contacts?.id || ''}
+                    className="w-full rounded-xl border border-[#d1d1d6] bg-white px-3.5 py-2 text-sm text-[#1d1d1f] focus:border-[#1d1d1f] focus:outline-none focus:ring-1 focus:ring-[#1d1d1f] transition-all"
+                  >
+                    <option value="">Nenhum contato selecionado</option>
+                    {contacts.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-[#1d1d1f] mb-1">
+                    Evento Vinculado
+                  </label>
+                  <select
+                    name="event_id"
+                    defaultValue={editingTx?.events?.id || ''}
+                    className="w-full rounded-xl border border-[#d1d1d6] bg-white px-3.5 py-2 text-sm text-[#1d1d1f] focus:border-[#1d1d1f] focus:outline-none focus:ring-1 focus:ring-[#1d1d1f] transition-all"
+                  >
+                    <option value="">Nenhum evento vinculado</option>
+                    {events.map((ev) => (
+                      <option key={ev.id} value={ev.id}>
+                        {ev.title}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-[#1d1d1f] mb-1">
+                  Status
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="flex items-center justify-center gap-2 p-2 rounded-xl border border-[#e5e5ea] text-xs font-medium cursor-pointer has-checked:border-[#1d1d1f] has-checked:bg-[#f5f5f7]">
+                    <input
+                      type="radio"
+                      name="status"
+                      value="pending"
+                      defaultChecked={editingTx ? editingTx.status === 'pending' : true}
+                      className="accent-[#1d1d1f]"
+                    />
+                    <span>Pendente</span>
+                  </label>
+                  <label className="flex items-center justify-center gap-2 p-2 rounded-xl border border-[#e5e5ea] text-xs font-medium cursor-pointer has-checked:border-[#1d1d1f] has-checked:bg-[#f5f5f7]">
+                    <input
+                      type="radio"
+                      name="status"
+                      value="paid"
+                      defaultChecked={editingTx ? editingTx.status === 'paid' : false}
+                      className="accent-[#1d1d1f]"
+                    />
+                    <span>Já Liquidado (Pago)</span>
+                  </label>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2.5 pt-4 border-t border-[#f2f2f7]">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setModalType(null)
+                    setEditingTx(null)
+                  }}
+                  className="px-4 py-2 text-xs font-semibold text-[#6e6e73] hover:text-[#1d1d1f] transition-colors cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={isPending}
+                  className={`flex items-center gap-1.5 rounded-xl px-5 py-2 text-xs font-semibold text-white transition-all shadow-xs active:scale-[0.98] disabled:opacity-50 cursor-pointer ${
+                    modalType === 'income'
+                      ? 'bg-[#1a7f37] hover:bg-[#15662c]'
+                      : 'bg-[#cf222e] hover:bg-[#a41a24]'
+                  }`}
+                >
+                  {isPending
+                    ? 'Gravando...'
+                    : editingTx
+                    ? 'Salvar Alterações'
+                    : modalType === 'income'
+                    ? 'Salvar Receita'
+                    : 'Salvar Despesa'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
