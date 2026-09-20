@@ -1,13 +1,41 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { Bell, Search, Plus, ArrowUpCircle, ArrowDownCircle, PackagePlus, CalendarPlus, UserPlus } from 'lucide-react'
+import { Bell, Search, Plus, ArrowUpCircle, ArrowDownCircle, PackagePlus, CalendarPlus, UserPlus, Maximize2, Minimize2 } from 'lucide-react'
 import Link from 'next/link'
 
 export function Header({ email, name, role }: { email: string; name: string; role: string }) {
   const [quickOpen, setQuickOpen] = useState(false)
   const [notificationsOpen, setNotificationsOpen] = useState(false)
+  const [isFullscreen, setIsFullscreen] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
+
+  // Sincroniza o ícone quando o usuário sai do fullscreen pelo ESC ou F11 nativo
+  useEffect(() => {
+    const onFsChange = () => setIsFullscreen(!!document.fullscreenElement)
+    document.addEventListener('fullscreenchange', onFsChange)
+    return () => document.removeEventListener('fullscreenchange', onFsChange)
+  }, [])
+
+  // Atalho F11 no teclado
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'F11') {
+        e.preventDefault()
+        toggleFullscreen()
+      }
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [isFullscreen])
+
+  function toggleFullscreen() {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(() => {})
+    } else {
+      document.exitFullscreen().catch(() => {})
+    }
+  }
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -100,6 +128,15 @@ export function Header({ email, name, role }: { email: string; name: string; rol
             </div>
           )}
         </div>
+
+        {/* Fullscreen Button */}
+        <button
+          onClick={toggleFullscreen}
+          title={isFullscreen ? 'Sair da tela cheia (F11)' : 'Tela cheia (F11)'}
+          className="rounded-xl p-2 text-[#86868b] hover:bg-[#f5f5f7] hover:text-[#1d1d1f] transition-colors cursor-pointer"
+        >
+          {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+        </button>
 
         <div className="h-5 w-px bg-[#e5e5ea] mx-1"></div>
 
