@@ -5,12 +5,18 @@ import { cookies } from 'next/headers'
 const JWT_SECRET = new TextEncoder().encode(process.env.JWT_SECRET!)
 
 const COOKIE_NAME = 'luh_session'
-const COOKIE_OPTIONS = {
-  httpOnly: true,        // JavaScript não pode ler o cookie
-  secure: process.env.NODE_ENV === 'production', // HTTPS apenas em produção
-  sameSite: 'strict' as const, // Proteção CSRF
-  maxAge: 60 * 60 * 8,  // 8 horas de sessão
-  path: '/',
+
+const SESSION_8H  = 60 * 60 * 8          // 8 horas
+const SESSION_30D = 60 * 60 * 24 * 30   // 30 dias
+
+function buildCookieOptions(rememberMe = false) {
+  return {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'strict' as const,
+    maxAge: rememberMe ? SESSION_30D : SESSION_8H,
+    path: '/',
+  }
 }
 
 export interface SessionPayload {
@@ -23,15 +29,16 @@ export interface SessionPayload {
 /**
  * Cria um JWT e salva no cookie HttpOnly
  */
-export async function createSession(payload: SessionPayload) {
+export async function createSession(payload: SessionPayload, rememberMe = false) {
+  const expirationTime = rememberMe ? '30d' : '8h'
   const token = await new SignJWT({ ...payload })
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
-    .setExpirationTime('8h')
+    .setExpirationTime(expirationTime)
     .sign(JWT_SECRET)
 
   const cookieStore = await cookies()
-  cookieStore.set(COOKIE_NAME, token, COOKIE_OPTIONS)
+  cookieStore.set(COOKIE_NAME, token, buildCookieOptions(rememberMe))
 }
 
 /**

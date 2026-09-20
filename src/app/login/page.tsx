@@ -78,6 +78,20 @@ export default async function LoginPage({
             </div>
           )}
 
+          {/* Lembrar de mim */}
+          <label className="flex cursor-pointer items-center gap-2.5 select-none">
+            <input
+              id="rememberMe"
+              name="rememberMe"
+              type="checkbox"
+              defaultChecked
+              className="h-4 w-4 rounded border-[#d1d1d6] accent-[#1d1d1f] cursor-pointer"
+            />
+            <span className="text-xs text-[#6e6e73]">
+              Lembrar de mim por <span className="font-semibold text-[#1d1d1f]">30 dias</span>
+            </span>
+          </label>
+
           <button
             type="submit"
             className="mt-2 w-full rounded-xl bg-[#1d1d1f] py-2.5 text-xs font-semibold text-white transition-all hover:bg-[#333336] active:scale-[0.98] shadow-xs"

@@ -8,6 +8,7 @@ import { redirect } from 'next/navigation'
 export async function login(formData: FormData) {
   const email = (formData.get('email') as string)?.trim().toLowerCase()
   const password = formData.get('password') as string
+  const rememberMe = formData.get('rememberMe') === 'on'
 
   // Validações básicas de entrada
   if (!email || !password) {
@@ -45,7 +46,7 @@ export async function login(formData: FormData) {
     email: user.email,
     name: user.name,
     role: user.role,
-  })
+  }, rememberMe)
 
   // 5. Atualizar last_login (sem bloquear o fluxo)
   supabase
