@@ -21,13 +21,28 @@
   }
 }
 
+/* ── LIGHT MODE (padrão) ─────────────────────────────── */
 :root {
-  --background: #f5f5f7;
-  --foreground: #1d1d1f;
-  --surface: #ffffff;
-  --surface-hover: #f0f0f2;
-  --border-subtle: #e5e5ea;
-  --border-strong: #d2d2d7;
+  --background:      #f5f5f7;
+  --foreground:      #1d1d1f;
+  --surface:         #ffffff;
+  --surface-hover:   #f0f0f2;
+  --border-subtle:   #e5e5ea;
+  --border-strong:   #d2d2d7;
+  --text-secondary:  #6e6e73;
+  --text-tertiary:   #86868b;
+}
+
+/* ── DARK MODE ───────────────────────────────────────── */
+html.dark {
+  --background:      #0d0d0f;
+  --foreground:      #f0f0f0;
+  --surface:         #1c1c1e;
+  --surface-hover:   #2c2c2e;
+  --border-subtle:   #3a3a3c;
+  --border-strong:   #4a4a4c;
+  --text-secondary:  #a1a1aa;
+  --text-tertiary:   #71717a;
 }
 
 body {
@@ -36,5 +51,41 @@ body {
   font-family: var(--font-sans), -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+/* Transição suave para todos os elementos */
+*, *::before, *::after {
+  transition-property: background-color, border-color, color;
+  transition-duration: 0.15s;
+  transition-timing-function: ease;
+}
+
+/* ── DARK MODE: componentes específicos ──────────────── */
+html.dark .bg-white          { background-color: #1c1c1e !important; }
+html.dark .bg-\[\#f5f5f7\]  { background-color: #2c2c2e !important; }
+html.dark .bg-\[\#f9f9fb\]  { background-color: #252527 !important; }
+html.dark .bg-\[\#fbfbfd\]  { background-color: #252527 !important; }
+html.dark .bg-\[\#f0f0f2\]  { background-color: #3a3a3c !important; }
+
+html.dark .border-\[\#e5e5ea\] { border-color: #3a3a3c !important; }
+html.dark .border-\[\#f2f2f7\] { border-color: #2c2c2e !important; }
+html.dark .border-\[\#d1d1d6\] { border-color: #4a4a4c !important; }
+
+html.dark .text-\[\#1d1d1f\]  { color: #f0f0f0 !important; }
+html.dark .text-\[\#6e6e73\]  { color: #a1a1aa !important; }
+html.dark .text-\[\#86868b\]  { color: #71717a !important; }
+
+html.dark input,
+html.dark textarea,
+html.dark select {
+  background-color: #2c2c2e !important;
+  color: #f0f0f0 !important;
+  border-color: #4a4a4c !important;
+}
+
+html.dark input::placeholder,
+html.dark textarea::placeholder {
+  color: #71717a !important;
 }
 

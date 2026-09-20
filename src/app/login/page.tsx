@@ -24,9 +24,9 @@ export default async function LoginPage({
         <Image
           src="/logo-luh.jpg"
           alt="Luh Recepções"
-          width={200}
-          height={80}
-          className="object-contain mb-2"
+          width={180}
+          height={70}
+          className="object-contain h-16 w-auto max-w-[180px] mb-2"
           priority
         />
         <p className="mt-1 text-xs font-medium uppercase tracking-wider text-[#86868b]">

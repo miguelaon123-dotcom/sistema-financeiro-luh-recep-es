@@ -1,13 +1,15 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { Bell, Search, Plus, ArrowUpCircle, ArrowDownCircle, PackagePlus, CalendarPlus, UserPlus, Maximize2, Minimize2 } from 'lucide-react'
+import { Bell, Search, Plus, ArrowUpCircle, ArrowDownCircle, PackagePlus, CalendarPlus, UserPlus, Maximize2, Minimize2, Moon, Sun } from 'lucide-react'
+import { useTheme } from '@/components/ThemeProvider'
 import Link from 'next/link'
 
 export function Header({ email, name, role }: { email: string; name: string; role: string }) {
   const [quickOpen, setQuickOpen] = useState(false)
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [isFullscreen, setIsFullscreen] = useState(false)
+  const { theme, toggle: toggleTheme } = useTheme()
   const dropdownRef = useRef<HTMLDivElement>(null)
 
   // Sincroniza o ícone quando o usuário sai do fullscreen pelo ESC ou F11 nativo
@@ -136,6 +138,15 @@ export function Header({ email, name, role }: { email: string; name: string; rol
           className="rounded-xl p-2 text-[#86868b] hover:bg-[#f5f5f7] hover:text-[#1d1d1f] transition-colors cursor-pointer"
         >
           {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+        </button>
+
+        {/* Dark Mode Toggle */}
+        <button
+          onClick={toggleTheme}
+          title={theme === 'dark' ? 'Modo claro' : 'Modo escuro'}
+          className="rounded-xl p-2 text-[#86868b] hover:bg-[#f5f5f7] hover:text-[#1d1d1f] transition-colors cursor-pointer"
+        >
+          {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
         </button>
 
         <div className="h-5 w-px bg-[#e5e5ea] mx-1"></div>
