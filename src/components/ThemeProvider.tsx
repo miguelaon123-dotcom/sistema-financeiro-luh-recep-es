@@ -22,6 +22,26 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     const preferred = saved ?? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
     apply(preferred)
     setTheme(preferred)
+
+    // Scroll suave para o campo focado quando o teclado virtual abre no celular/tablet
+    const handleFocusIn = (e: FocusEvent) => {
+      const target = e.target as HTMLElement
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT')
+      ) {
+        setTimeout(() => {
+          try {
+            target.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          } catch (_) {}
+        }, 300)
+      }
+    }
+
+    window.addEventListener('focusin', handleFocusIn)
+    return () => window.removeEventListener('focusin', handleFocusIn)
   }, [])
 
   function apply(t: Theme) {

@@ -110,6 +110,48 @@ export async function getCaixinhas(): Promise<Caixinha[]> {
   }
 }
 
+export async function getFreeCashBalance(excludeCaixinhaId?: string): Promise<{
+  cashBalance: number
+  totalInCaixinhas: number
+  freeBalance: number
+}> {
+  const supabase = createAdminClient()
+  const [{ data: txs }, caixinhas] = await Promise.all([
+    supabase
+      .from('financial_transactions')
+      .select('amount, type, status')
+      .eq('status', 'paid'),
+    getCaixinhas(),
+  ])
+
+  const totalReceived = (txs || [])
+    .filter((t: any) => t.type === 'income')
+    .reduce((acc: number, t: any) => acc + Number(t.amount || 0), 0)
+
+  const totalPaid = (txs || [])
+    .filter((t: any) => t.type === 'expense')
+    .reduce((acc: number, t: any) => acc + Number(t.amount || 0), 0)
+
+  const cashBalance = totalReceived - totalPaid
+
+  const relevantCaixinhas = excludeCaixinhaId
+    ? caixinhas.filter((c) => c.id !== excludeCaixinhaId)
+    : caixinhas
+
+  const totalInCaixinhas = relevantCaixinhas.reduce(
+    (acc, c) => acc + Number(c.current_balance || 0),
+    0
+  )
+
+  const freeBalance = Math.max(0, cashBalance - totalInCaixinhas)
+
+  return {
+    cashBalance,
+    totalInCaixinhas,
+    freeBalance,
+  }
+}
+
 export async function createCaixinha(formData: FormData) {
   const headersList = await headers()
   const userId = headersList.get('x-user-id') || null
@@ -128,6 +170,16 @@ export async function createCaixinha(formData: FormData) {
 
   if (initial_balance < 0) {
     return { error: 'O saldo inicial não pode ser negativo.' }
+  }
+
+  // REGRA BANCÁRIA: Se for criar com saldo inicial, precisa ter saldo livre real em caixa
+  if (initial_balance > 0) {
+    const { freeBalance, cashBalance } = await getFreeCashBalance()
+    if (initial_balance > freeBalance) {
+      return {
+        error: `Saldo livre insuficiente em caixa! Você possui R$ ${freeBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} livre (Saldo Real em Caixa: R$ ${cashBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}). Crie a caixinha com saldo 0 ou até o valor livre.`,
+      }
+    }
   }
 
   // Gera UUID padrão compatível com o tipo UUID do PostgreSQL no Supabase
@@ -214,7 +266,7 @@ export async function updateCaixinha(formData: FormData) {
   return { success: true }
 }
 
-// 1. EDITAR SALDO DIRETAMENTE
+// 1. EDITAR SALDO DIRETAMENTE (COM VALIDAÇÃO DE SALDO LIVRE)
 export async function editCaixinhaBalance(formData: FormData) {
   const headersList = await headers()
   const userId = headersList.get('x-user-id') || null
@@ -234,6 +286,17 @@ export async function editCaixinhaBalance(formData: FormData) {
   const existing = caixinhas.find((c) => c.id === id)
   if (!existing) {
     return { error: 'Caixinha não encontrada.' }
+  }
+
+  // Se estiver aumentando o saldo da caixinha, validar se há saldo livre suficiente
+  if (newBalance > existing.current_balance) {
+    const diff = newBalance - existing.current_balance
+    const { freeBalance } = await getFreeCashBalance(id)
+    if (diff > freeBalance) {
+      return {
+        error: `Saldo livre insuficiente em caixa! Para aumentar em R$ ${diff.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}, você possui apenas R$ ${freeBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} disponível.`,
+      }
+    }
   }
 
   const updated: Caixinha = {
@@ -260,7 +323,7 @@ export async function editCaixinhaBalance(formData: FormData) {
   return { success: true }
 }
 
-// 2. GUARDAR / DEPOSITAR DINHEIRO NA CAIXINHA
+// 2. GUARDAR / DEPOSITAR DINHEIRO NA CAIXINHA (VALIDAÇÃO DE SALDO LIVRE REAL)
 export async function depositToCaixinha(formData: FormData) {
   const headersList = await headers()
   const userId = headersList.get('x-user-id') || null
@@ -276,6 +339,14 @@ export async function depositToCaixinha(formData: FormData) {
   const existing = caixinhas.find((c) => c.id === id)
   if (!existing) {
     return { error: 'Caixinha não encontrada.' }
+  }
+
+  // REGRA BANCÁRIA: SÓ PODE GUARDAR SE TIVER SALDO LIVRE REAL EM CONTA
+  const { freeBalance, cashBalance } = await getFreeCashBalance()
+  if (amount > freeBalance) {
+    return {
+      error: `Saldo livre insuficiente! Você possui apenas R$ ${freeBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} livre em caixa (Saldo Real: R$ ${cashBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}). Contas 'A Receber' ainda não entraram como saldo real.`,
+    }
   }
 
   const updated: Caixinha = {
@@ -302,7 +373,7 @@ export async function depositToCaixinha(formData: FormData) {
   return { success: true }
 }
 
-// 3. RESGATAR / RETIRAR DINHEIRO DA CAIXINHA (COM REGRA: NÃO PODER TIRAR O QUE NÃO TEM)
+// 3. RESGATAR / RETIRAR DINHEIRO DA CAIXINHA (NÃO PODE RETIRAR MAIS DO QUE TEM DENTRO DELA)
 export async function withdrawFromCaixinha(formData: FormData) {
   const headersList = await headers()
   const userId = headersList.get('x-user-id') || null
@@ -320,10 +391,10 @@ export async function withdrawFromCaixinha(formData: FormData) {
     return { error: 'Caixinha não encontrada.' }
   }
 
-  // REGRA DE OURO: NÃO PODER TIRAR SALDO QUE NÃO TENHA
+  // REGRA: NÃO PODER TIRAR SALDO QUE NÃO TENHA NA CAIXINHA
   if (amount > existing.current_balance) {
     return {
-      error: `Saldo insuficiente! Você só pode retirar até R$ ${existing.current_balance.toLocaleString(
+      error: `Saldo insuficiente na caixinha! Você só pode retirar até R$ ${existing.current_balance.toLocaleString(
         'pt-BR',
         { minimumFractionDigits: 2 }
       )} desta caixinha.`,
@@ -354,13 +425,26 @@ export async function withdrawFromCaixinha(formData: FormData) {
   return { success: true }
 }
 
-// 4. APAGAR CAIXINHA
+// 4. APAGAR CAIXINHA (REGRA BANCÁRIA: NÃO PODE APAGAR CAIXINHA COM DINHEIRO DENTRO)
 export async function deleteCaixinha(id: string) {
   const headersList = await headers()
   const userId = headersList.get('x-user-id') || null
 
   if (!id) {
     return { error: 'ID da caixinha inválido.' }
+  }
+
+  const caixinhas = await getCaixinhas()
+  const existing = caixinhas.find((c) => c.id === id)
+  if (!existing) {
+    return { error: 'Caixinha não encontrada.' }
+  }
+
+  // REGRA BANCÁRIA: Não pode deletar caixinha que tenha dinheiro dentro!
+  if (existing.current_balance > 0) {
+    return {
+      error: `Não é possível excluir a caixinha "${existing.name}" pois ela possui R$ ${existing.current_balance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} guardado. Resgate o saldo de volta para a conta antes de excluir.`,
+    }
   }
 
   const supabase = createAdminClient()

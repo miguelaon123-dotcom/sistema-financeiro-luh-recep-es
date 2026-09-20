@@ -92,8 +92,9 @@ export function FinanceiroClient({
     .filter((t) => t.type === 'expense' && t.status === 'paid')
     .reduce((acc, t) => acc + Number(t.amount), 0)
 
-  const projectedBalance = totalReceived - totalPaid + (pendingIncome - pendingExpense)
+  const cashBalance = totalReceived - totalPaid
   const totalInCaixinhas = (caixinhas || []).reduce((acc, c) => acc + Number(c.current_balance || 0), 0)
+  const freeCashBalance = Math.max(0, cashBalance - totalInCaixinhas)
 
   // Filtragem
   const filteredTransactions = localTransactions.filter((tx) => {
@@ -169,7 +170,7 @@ export function FinanceiroClient({
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-[#1d1d1f]">Financeiro</h1>
           <p className="text-sm text-[#6e6e73]">
-            Controle de receitas, despesas e fluxo de caixa da Luh Recepções.
+            Controle de fluxo de caixa, caixinhas e movimentações da Luh Recepções.
           </p>
         </div>
         <div className="flex items-center gap-2.5">
@@ -196,35 +197,56 @@ export function FinanceiroClient({
         </div>
       </div>
 
-      {/* Summary Cards */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      {/* Summary Cards Consolidados */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
+        {/* 1. Saldo Real em Caixa */}
         <div className="rounded-2xl border border-[#e5e5ea] bg-white p-5 shadow-xs">
-          <span className="text-xs font-semibold uppercase tracking-wider text-[#1a7f37]">
-            A Receber (Pendente)
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold uppercase tracking-wider text-[#6e6e73]">
+              Saldo em Caixa (Real)
+            </span>
+            <div className="rounded-xl bg-[#e8f8ee] p-1.5 text-[#1a7f37]">
+              <Wallet size={16} />
+            </div>
+          </div>
+          <p
+            className={`mt-2 text-2xl font-bold tracking-tight ${
+              cashBalance >= 0 ? 'text-[#1d1d1f]' : 'text-[#cf222e]'
+            }`}
+          >
+            R$ {cashBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+          </p>
+          <span className="mt-1 block text-xs text-[#86868b]">
+            Recebido ({totalReceived.toLocaleString('pt-BR', { minimumFractionDigits: 0 })}) − Pago ({totalPaid.toLocaleString('pt-BR', { minimumFractionDigits: 0 })})
           </span>
+        </div>
+
+        {/* 2. Saldo Livre */}
+        <div className="rounded-2xl border border-[#e5e5ea] bg-white p-5 shadow-xs">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold uppercase tracking-wider text-[#1a7f37]">
+              Saldo Livre
+            </span>
+            <span className="rounded-md bg-[#e8f8ee] px-1.5 py-0.5 text-[10px] font-bold text-[#1a7f37]">
+              Disponível
+            </span>
+          </div>
           <p className="mt-2 text-2xl font-bold tracking-tight text-[#1a7f37]">
-            R$ {pendingIncome.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+            R$ {freeCashBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
           </p>
-          <span className="mt-1 block text-xs text-[#86868b]">Contratos e locações pendentes</span>
-        </div>
-
-        <div className="rounded-2xl border border-[#e5e5ea] bg-white p-5 shadow-xs">
-          <span className="text-xs font-semibold uppercase tracking-wider text-[#cf222e]">
-            A Pagar (Pendente)
+          <span className="mt-1 block text-xs text-[#86868b]">
+            Saldo em Caixa − Caixinhas
           </span>
-          <p className="mt-2 text-2xl font-bold tracking-tight text-[#cf222e]">
-            R$ {pendingExpense.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-          </p>
-          <span className="mt-1 block text-xs text-[#86868b]">Fornecedores e custos fixos</span>
         </div>
 
+        {/* 3. Caixinhas */}
         <div
           onClick={() => setActiveTab('caixinhas')}
           className="rounded-2xl border border-[#e5e5ea] bg-white p-5 shadow-xs hover:border-[#1d1d1f]/40 cursor-pointer transition-all"
         >
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold uppercase tracking-wider text-[#1d1d1f]">
-              Caixinhas
+              Em Caixinhas
             </span>
             <span className="rounded-md bg-[#f5f5f7] px-1.5 py-0.5 text-[10px] font-bold text-[#1d1d1f]">
               {caixinhas.length} ativas
@@ -233,21 +255,39 @@ export function FinanceiroClient({
           <p className="mt-2 text-2xl font-bold tracking-tight text-[#1d1d1f]">
             R$ {totalInCaixinhas.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
           </p>
-          <span className="mt-1 block text-xs text-[#86868b]">Reservas e metas separadas →</span>
+          <span className="mt-1 block text-xs text-[#86868b]">Reservas separadas →</span>
         </div>
 
+        {/* 4. A Receber (Pendente) */}
         <div className="rounded-2xl border border-[#e5e5ea] bg-white p-5 shadow-xs">
-          <span className="text-xs font-semibold uppercase tracking-wider text-[#b8860b]">
-            Saldo Projetado
-          </span>
-          <p
-            className={`mt-2 text-2xl font-bold tracking-tight ${
-              projectedBalance >= 0 ? 'text-[#1d1d1f]' : 'text-[#cf222e]'
-            }`}
-          >
-            R$ {projectedBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold uppercase tracking-wider text-[#b8860b]">
+              A Receber (Futuro)
+            </span>
+            <span className="rounded-md bg-[#fff8e6] px-1.5 py-0.5 text-[10px] font-bold text-[#b8860b]">
+              Pendente
+            </span>
+          </div>
+          <p className="mt-2 text-2xl font-bold tracking-tight text-[#b8860b]">
+            R$ {pendingIncome.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
           </p>
-          <span className="mt-1 block text-xs text-[#86868b]">Previsão de encerramento</span>
+          <span className="mt-1 block text-xs text-[#86868b]">Contratos e locações pendentes</span>
+        </div>
+
+        {/* 5. A Pagar (Pendente) */}
+        <div className="rounded-2xl border border-[#e5e5ea] bg-white p-5 shadow-xs">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold uppercase tracking-wider text-[#cf222e]">
+              A Pagar (Futuro)
+            </span>
+            <span className="rounded-md bg-[#feeceb] px-1.5 py-0.5 text-[10px] font-bold text-[#cf222e]">
+              Pendente
+            </span>
+          </div>
+          <p className="mt-2 text-2xl font-bold tracking-tight text-[#cf222e]">
+            R$ {pendingExpense.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+          </p>
+          <span className="mt-1 block text-xs text-[#86868b]">Fornecedores e custos fixos</span>
         </div>
       </div>
 
@@ -436,8 +476,8 @@ export function FinanceiroClient({
 
       {/* Modal Nova Receita / Nova Despesa / Editar */}
       {modalType && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-in fade-in duration-150">
-          <div className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl border border-[#e5e5ea] animate-in zoom-in-95 duration-150">
+        <div className="fixed inset-0 z-50 overflow-y-auto flex min-h-full items-center justify-center bg-black/40 backdrop-blur-xs p-3 sm:p-4 animate-in fade-in duration-150">
+          <div className="w-full max-w-lg max-h-[90dvh] overflow-y-auto rounded-3xl bg-white p-6 shadow-2xl border border-[#e5e5ea] animate-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between pb-4 border-b border-[#f2f2f7]">
               <div className="flex items-center gap-2">
                 {modalType === 'income' ? (
