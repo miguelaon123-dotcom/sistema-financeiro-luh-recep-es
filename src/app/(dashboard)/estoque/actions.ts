@@ -3,16 +3,13 @@
 import { createAdminClient } from '@/lib/supabase/server'
 import { headers } from 'next/headers'
 import { revalidatePath } from 'next/cache'
+import { invalidateCache } from '@/lib/data-cache'
 
 export async function createStockMovement(formData: FormData) {
   const headersList = await headers()
   const userId = headersList.get('x-user-id') || null
-  const role = headersList.get('x-user-role') || 'leitura'
 
   const supabase = createAdminClient()
-  if (userId) {
-    await supabase.rpc('set_user_context', { p_user_id: userId, p_role: role })
-  }
 
   const product_id = formData.get('product_id') as string
   const type = formData.get('type') as 'in' | 'out' | 'loss' | 'adjustment' | 'return'
@@ -69,20 +66,14 @@ export async function createStockMovement(formData: FormData) {
     return { error: updateErr.message }
   }
 
+  invalidateCache(['estoque', 'dashboard'])
   revalidatePath('/estoque')
   revalidatePath('/')
   return { success: true }
 }
 
 export async function deleteProduct(id: string) {
-  const headersList = await headers()
-  const userId = headersList.get('x-user-id') || null
-  const role = headersList.get('x-user-role') || 'leitura'
-
   const supabase = createAdminClient()
-  if (userId) {
-    await supabase.rpc('set_user_context', { p_user_id: userId, p_role: role })
-  }
 
   const { error } = await supabase.from('products').delete().eq('id', id)
 
@@ -90,6 +81,7 @@ export async function deleteProduct(id: string) {
     return { error: error.message }
   }
 
+  invalidateCache(['estoque', 'dashboard'])
   revalidatePath('/estoque')
   revalidatePath('/')
   return { success: true }
@@ -98,12 +90,8 @@ export async function deleteProduct(id: string) {
 export async function updateProduct(formData: FormData) {
   const headersList = await headers()
   const userId = headersList.get('x-user-id') || null
-  const role = headersList.get('x-user-role') || 'leitura'
 
   const supabase = createAdminClient()
-  if (userId) {
-    await supabase.rpc('set_user_context', { p_user_id: userId, p_role: role })
-  }
 
   const id = formData.get('id') as string
   const name = (formData.get('name') as string)?.trim()
@@ -191,6 +179,7 @@ export async function updateProduct(formData: FormData) {
     }
   }
 
+  invalidateCache(['estoque', 'dashboard'])
   revalidatePath('/estoque')
   revalidatePath('/')
   return { success: true }

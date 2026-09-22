@@ -2,34 +2,39 @@ import { createAdminClient } from '@/lib/supabase/server'
 import { headers } from 'next/headers'
 import { FuncionariosClient } from './FuncionariosClient'
 
+import { getCachedData } from '@/lib/data-cache'
+
 export default async function FuncionariosPage() {
-  const headersList = await headers()
-  const userId = headersList.get('x-user-id') || ''
-  const role = headersList.get('x-user-role') || 'leitura'
-
   const supabase = createAdminClient()
-  if (userId) {
-    await supabase.rpc('set_user_context', { p_user_id: userId, p_role: role })
-  }
 
-  let employees: any[] = []
-  let tableCreated = true
-
-  // 1. Tentar buscar da tabela employees
-  try {
-    const { data, error } = await supabase
-      .from('employees')
-      .select('*')
-      .order('name', { ascending: true })
-
-    if (!error && data) {
-      employees = data
-    } else if (error?.code === 'PGRST205') {
-      tableCreated = false
+  // 1. Buscar Funcionários, Escalas e Cargos com cache em memória
+  const { employees: initialEmployees, staffAssignments: initialStaff, roles: initialRoles, tableCreated: isTableCreated } = await getCachedData(
+    'funcionarios_data',
+    async () => {
+      const [empRes, staffRes, rolesRes] = await Promise.all([
+        supabase
+          .from('employees')
+          .select('*')
+          .order('name', { ascending: true }),
+        supabase
+          .from('event_staff')
+          .select('id, event_id, employee_id, role, daily_rate, status, payment_status, paid_at, events(id, title, event_date)'),
+        supabase
+          .from('employee_roles')
+          .select('*')
+          .order('name', { ascending: true }),
+      ])
+      return {
+        employees: empRes.data || [],
+        staffAssignments: staffRes.data || [],
+        roles: rolesRes.data && rolesRes.data.length > 0 ? rolesRes.data : null,
+        tableCreated: !empRes.error || empRes.error.code !== 'PGRST205',
+      }
     }
-  } catch {
-    tableCreated = false
-  }
+  )
+
+  let employees: any[] = initialEmployees
+  let tableCreated = isTableCreated
 
   // Fallback para audit_logs se a tabela ainda não existir
   if (!tableCreated) {
@@ -75,14 +80,7 @@ export default async function FuncionariosPage() {
     }
   }
 
-  // 2. Buscar escalas para contar eventos e pagamentos de cada colaborador
-  let staffAssignments: any[] = []
-  try {
-    const { data: staffData } = await supabase
-      .from('event_staff')
-      .select('id, event_id, employee_id, role, daily_rate, status, payment_status, paid_at, events(id, title, event_date)')
-    if (staffData) staffAssignments = staffData
-  } catch {}
+  let staffAssignments: any[] = initialStaff || []
 
   // Se não veio do banco, busca em audit_logs
   if (staffAssignments.length === 0) {
@@ -129,58 +127,23 @@ export default async function FuncionariosPage() {
     { id: 'role-8', name: 'Coordenador(a) de Salão', default_daily_rate: 220 },
   ]
 
-  let roles = [...DEFAULT_ROLES]
-  try {
-    const { data: dbRoles } = await supabase
-      .from('employee_roles')
-      .select('*')
-      .order('name', { ascending: true })
-    if (dbRoles && dbRoles.length > 0) {
-      roles = dbRoles
-    }
-  } catch {}
-
-  // Fallback audit_logs para employee_roles
-  try {
-    const { data: roleLogs } = await supabase
-      .from('audit_logs')
-      .select('*')
-      .like('action', 'employee_role_%')
-      .order('created_at', { ascending: true })
-    if (roleLogs && roleLogs.length > 0) {
-      const rMap = new Map<string, any>()
-      for (const r of roles) rMap.set(r.id || r.name, r)
-      for (const log of roleLogs) {
-        if (log.action === 'employee_role_deleted') {
-          rMap.delete(log.record_id)
-        } else if (log.action === 'employee_role_created' && log.new_data) {
-          rMap.set(log.record_id, { id: log.record_id, ...log.new_data })
-        } else if (log.action === 'employee_role_updated' && rMap.has(log.record_id)) {
-          rMap.set(log.record_id, { ...rMap.get(log.record_id), ...log.new_data })
-        }
-      }
-      roles = Array.from(rMap.values())
-    }
-  } catch {}
-
-  // Filtrar e garantir remoção de Cerimonialista, DJ e Barman, assegurando Auxiliar de Bar
-  roles = roles.filter(
-    (r) =>
+  let processedRoles = (initialRoles && initialRoles.length > 0 ? initialRoles : [...DEFAULT_ROLES]).filter(
+    (r: any) =>
       r.name !== 'Cerimonialista' &&
       !r.name.includes('DJ') &&
       !r.name.toLowerCase().includes('sonorização') &&
       r.name !== 'Bartender / Barman' &&
       r.name !== 'Barman'
   )
-  if (!roles.some((r) => r.name.toLowerCase() === 'auxiliar de bar')) {
-    roles.splice(3, 0, { id: 'role-4', name: 'Auxiliar de Bar', default_daily_rate: 150 })
+  if (!processedRoles.some((r: any) => r.name.toLowerCase() === 'auxiliar de bar')) {
+    processedRoles.splice(3, 0, { id: 'role-4', name: 'Auxiliar de Bar', default_daily_rate: 150 })
   }
 
   return (
     <FuncionariosClient
       employees={employees}
       staffAssignments={staffAssignments}
-      roles={roles}
+      roles={processedRoles}
       tableCreatedInDb={tableCreated}
     />
   )

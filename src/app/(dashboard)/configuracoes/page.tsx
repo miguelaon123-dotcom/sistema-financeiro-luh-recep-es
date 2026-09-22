@@ -10,9 +10,6 @@ export default async function ConfiguracoesPage() {
   const email = headersList.get('x-user-email') || ''
 
   const supabase = createAdminClient()
-  if (userId) {
-    await supabase.rpc('set_user_context', { p_user_id: userId, p_role: role })
-  }
 
   // Se for admin, busca todos os usuários
   let users: any[] = []

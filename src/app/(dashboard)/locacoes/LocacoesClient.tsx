@@ -262,7 +262,7 @@ export function LocacoesClient({
     const formData = new FormData(form)
 
     startTransition(async () => {
-      const res = await quickCreateClient(formData)
+      const res: any = await quickCreateClient(formData)
       if (res?.error) {
         alert(res.error)
       } else if (res?.client) {

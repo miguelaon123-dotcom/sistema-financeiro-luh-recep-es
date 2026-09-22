@@ -2,73 +2,65 @@ import { createAdminClient } from '@/lib/supabase/server'
 import { headers } from 'next/headers'
 import { LocacoesClient } from './LocacoesClient'
 
+import { getCachedData } from '@/lib/data-cache'
+
 export default async function LocacoesPage() {
-  const headersList = await headers()
-  const userId = headersList.get('x-user-id') || ''
-  const role = headersList.get('x-user-role') || 'leitura'
-
   const supabase = createAdminClient()
-  if (userId) {
-    await supabase.rpc('set_user_context', { p_user_id: userId, p_role: role })
-  }
 
-  // 1. Buscar Clientes e Produtos
-  const [contactsRes, productsRes] = await Promise.all([
-    supabase
-      .from('contacts')
-      .select('id, name, document, phone, email, address')
-      .order('name', { ascending: true }),
-    supabase
-      .from('products')
-      .select('id, name, sku, category, current_stock, min_stock, cost_price, rental_price, image_url')
-      .order('name', { ascending: true }),
-  ])
+  // 1. Buscar Clientes, Produtos e Locações com cache ultra-rápido em memória
+  const { contacts, products, rentals: initialRentals, tableCreated } = await getCachedData(
+    'locacoes_data',
+    async () => {
+      const [contactsRes, productsRes, rentalsRes] = await Promise.all([
+        supabase
+          .from('contacts')
+          .select('id, name, document, phone, email, address')
+          .order('name', { ascending: true }),
+        supabase
+          .from('products')
+          .select('id, name, sku, category, current_stock, min_stock, cost_price, rental_price, image_url')
+          .order('name', { ascending: true }),
+        supabase
+          .from('rentals')
+          .select(`
+            id, rental_code, client_id, start_date, return_date, actual_return_date,
+            status, delivery_type, delivery_address, delivery_fee, security_deposit,
+            items_total, total_amount, penalty_amount, payment_status, notes, created_at,
+            contacts(id, name, phone, document, address),
+            rental_items(
+              id, product_id, quantity, unit_price, subtotal, returned_qty, broken_qty, lost_qty, penalty_fee, notes,
+              products(id, name, sku, image_url, cost_price, rental_price)
+            )
+          `)
+          .order('created_at', { ascending: false }),
+      ])
 
-  const contacts = contactsRes.data || []
-  const products = productsRes.data || []
-
-  // 2. Buscar Locações (com suporte a fallback caso a tabela rentals ainda não tenha sido criada via SQL)
-  let rentals: any[] = []
-  let tableCreated = true
-
-  try {
-    const { data: dbRentals, error: rentErr } = await supabase
-      .from('rentals')
-      .select(`
-        id, rental_code, client_id, start_date, return_date, actual_return_date,
-        status, delivery_type, delivery_address, delivery_fee, security_deposit,
-        items_total, total_amount, penalty_amount, payment_status, notes, created_at,
-        contacts(id, name, phone, document, address),
-        rental_items(
-          id, product_id, quantity, unit_price, subtotal, returned_qty, broken_qty, lost_qty, penalty_fee, notes,
-          products(id, name, sku, image_url, cost_price, rental_price)
-        )
-      `)
-      .order('created_at', { ascending: false })
-
-    if (!rentErr && dbRentals) {
-      rentals = dbRentals
-    } else if (rentErr?.code === 'PGRST205') {
-      tableCreated = false
+      const isTableCreated = !rentalsRes.error || rentalsRes.error.code !== 'PGRST205'
+      return {
+        contacts: contactsRes.data || [],
+        products: productsRes.data || [],
+        rentals: rentalsRes.data || [],
+        tableCreated: isTableCreated,
+      }
     }
-  } catch {
-    tableCreated = false
-  }
+  )
+
+  let rentals: any[] = initialRentals || []
 
   // Fallback para audit_logs se a tabela ainda não existir no Supabase
   if (!tableCreated) {
     try {
-      const { data: logs } = await supabase
+      const { data: logs } = await (supabase as any)
         .from('audit_logs')
         .select('*')
         .like('action', 'rental_%')
         .order('created_at', { ascending: true })
 
-      if (logs && logs.length > 0) {
+      if (logs && (logs as any[]).length > 0) {
         const rentalsMap = new Map<string, any>()
         const deletedIds = new Set<string>()
 
-        for (const log of logs) {
+        for (const log of (logs as any[])) {
           if (log.action === 'rental_deleted') {
             deletedIds.add(log.record_id)
             rentalsMap.delete(log.record_id)
@@ -79,9 +71,9 @@ export default async function LocacoesPage() {
 
           if (log.action === 'rental_created' && log.new_data) {
             const data = log.new_data
-            const client = contacts.find((c) => c.id === data.clientId) || null
+            const client = (contacts as any[]).find((c: any) => c.id === data.clientId) || null
             const hydratedItems = (data.items || []).map((it: any) => {
-              const prod = products.find((p) => p.id === it.productId)
+              const prod = (products as any[]).find((p: any) => p.id === it.productId)
               return {
                 id: crypto.randomUUID(),
                 product_id: it.productId,

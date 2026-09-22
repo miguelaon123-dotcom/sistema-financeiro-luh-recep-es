@@ -3,16 +3,13 @@
 import { createAdminClient } from '@/lib/supabase/server'
 import { headers } from 'next/headers'
 import { revalidatePath } from 'next/cache'
+import { invalidateCache } from '@/lib/data-cache'
 
 export async function createTransaction(formData: FormData) {
   const headersList = await headers()
   const userId = headersList.get('x-user-id') || null
-  const role = headersList.get('x-user-role') || 'leitura'
 
   const supabase = createAdminClient()
-  if (userId) {
-    await supabase.rpc('set_user_context', { p_user_id: userId, p_role: role })
-  }
 
   const description = (formData.get('description') as string)?.trim()
   const type = (formData.get('type') as 'income' | 'expense') || 'income'
@@ -26,7 +23,7 @@ export async function createTransaction(formData: FormData) {
     return { error: 'Preencha a descrição, valor e data de vencimento.' }
   }
 
-  const { error } = await supabase.from('financial_transactions').insert({
+  const insertPayload: Record<string, any> = {
     description,
     type,
     amount,
@@ -36,13 +33,27 @@ export async function createTransaction(formData: FormData) {
     event_id: event_id || null,
     paid_date: status === 'paid' ? new Date().toISOString().split('T')[0] : null,
     created_by: userId || null,
-  })
+  }
+
+  let { error } = await supabase.from('financial_transactions').insert(insertPayload)
+
+  if (
+    error &&
+    (error.code === 'PGRST204' ||
+      error.message?.includes('created_by') ||
+      error.details?.includes('created_by'))
+  ) {
+    delete insertPayload.created_by
+    const retry = await supabase.from('financial_transactions').insert(insertPayload)
+    error = retry.error
+  }
 
   if (error) {
     console.error('Erro ao criar transação:', error)
     return { error: error.message }
   }
 
+  invalidateCache(['financeiro', 'dashboard', 'fornecedores'])
   revalidatePath('/financeiro')
   revalidatePath('/')
   return { success: true }
@@ -52,14 +63,7 @@ export async function updateTransactionStatus(
   id: string,
   newStatus: 'paid' | 'pending' | 'late' | 'canceled'
 ) {
-  const headersList = await headers()
-  const userId = headersList.get('x-user-id') || null
-  const role = headersList.get('x-user-role') || 'leitura'
-
   const supabase = createAdminClient()
-  if (userId) {
-    await supabase.rpc('set_user_context', { p_user_id: userId, p_role: role })
-  }
 
   const updateData: any = { status: newStatus }
   if (newStatus === 'paid') {
@@ -78,20 +82,14 @@ export async function updateTransactionStatus(
     return { error: error.message }
   }
 
+  invalidateCache(['financeiro', 'dashboard', 'fornecedores'])
   revalidatePath('/financeiro')
   revalidatePath('/')
   return { success: true }
 }
 
 export async function deleteTransaction(id: string) {
-  const headersList = await headers()
-  const userId = headersList.get('x-user-id') || null
-  const role = headersList.get('x-user-role') || 'leitura'
-
   const supabase = createAdminClient()
-  if (userId) {
-    await supabase.rpc('set_user_context', { p_user_id: userId, p_role: role })
-  }
 
   const { error } = await supabase.from('financial_transactions').delete().eq('id', id)
 
@@ -100,20 +98,14 @@ export async function deleteTransaction(id: string) {
     return { error: error.message }
   }
 
+  invalidateCache(['financeiro', 'dashboard', 'fornecedores'])
   revalidatePath('/financeiro')
   revalidatePath('/')
   return { success: true }
 }
 
 export async function updateTransaction(formData: FormData) {
-  const headersList = await headers()
-  const userId = headersList.get('x-user-id') || null
-  const role = headersList.get('x-user-role') || 'leitura'
-
   const supabase = createAdminClient()
-  if (userId) {
-    await supabase.rpc('set_user_context', { p_user_id: userId, p_role: role })
-  }
 
   const id = formData.get('id') as string
   const description = (formData.get('description') as string)?.trim()
@@ -154,6 +146,7 @@ export async function updateTransaction(formData: FormData) {
     return { error: error.message }
   }
 
+  invalidateCache(['financeiro', 'dashboard', 'fornecedores'])
   revalidatePath('/financeiro')
   revalidatePath('/')
   return { success: true }

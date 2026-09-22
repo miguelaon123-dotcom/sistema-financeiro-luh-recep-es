@@ -3,23 +3,207 @@
 import { createAdminClient } from '@/lib/supabase/server'
 import { headers } from 'next/headers'
 import { revalidatePath } from 'next/cache'
+import { invalidateCache } from '@/lib/data-cache'
+
+interface SyncFinancialParams {
+  title: string
+  client_id?: string | null
+  event_date: string
+  budget: number
+  deposit_amount: number
+  deposit_status: 'pending' | 'paid'
+  deposit_paid_date?: string | null
+  status: string
+  userId?: string | null
+}
+
+async function syncEventFinancialTransactions(
+  supabase: any,
+  eventId: string,
+  params: SyncFinancialParams
+) {
+  try {
+    const today = new Date().toISOString().split('T')[0]
+    const {
+      title,
+      client_id,
+      event_date,
+      budget,
+      deposit_amount,
+      deposit_status,
+      deposit_paid_date,
+      status,
+      userId,
+    } = params
+
+    // 1. Buscar transações de receita já associadas ao evento
+    const { data: existingTxs } = await supabase
+      .from('financial_transactions')
+      .select('id, description, amount, status, paid_date')
+      .eq('event_id', eventId)
+      .eq('type', 'income')
+
+    const txs: any[] = existingTxs || []
+
+    // Caso A: O evento possui um Sinal definido (> 0)
+    if (deposit_amount > 0) {
+      const remainingAmount = Math.max(0, budget - deposit_amount)
+
+      // Identificar transação de Sinal existente ou reutilizar
+      let sinalTx = txs.find((t) => t.description?.toLowerCase().includes('sinal'))
+      let remainingTx = txs.find((t) => !t.description?.toLowerCase().includes('sinal'))
+
+      if (!sinalTx && txs.length === 1 && remainingAmount === 0) {
+        sinalTx = txs[0]
+      } else if (!sinalTx && txs.length === 1) {
+        remainingTx = txs[0]
+      }
+
+      // 1.1 Gerenciar Transação de Sinal
+      const isSinalPaid = deposit_status === 'paid' || status === 'completed'
+      const sinalPaidDate = isSinalPaid ? (deposit_paid_date || today) : null
+      const sinalTxStatus = status === 'canceled' ? 'canceled' : (isSinalPaid ? 'paid' : 'pending')
+
+      if (sinalTx) {
+        await supabase
+          .from('financial_transactions')
+          .update({
+            amount: deposit_amount,
+            description: `Sinal - Evento: ${title}`,
+            due_date: event_date,
+            contact_id: client_id || null,
+            status: sinalTxStatus,
+            paid_date: sinalPaidDate,
+          })
+          .eq('id', sinalTx.id)
+      } else {
+        const sinalPayload: any = {
+          event_id: eventId,
+          contact_id: client_id || null,
+          type: 'income',
+          amount: deposit_amount,
+          description: `Sinal - Evento: ${title}`,
+          due_date: event_date,
+          status: sinalTxStatus,
+          paid_date: sinalPaidDate,
+          created_by: userId || null,
+        }
+        let res = await supabase.from('financial_transactions').insert(sinalPayload)
+        if (res.error && (res.error.code === 'PGRST204' || res.error.message?.includes('created_by'))) {
+          delete sinalPayload.created_by
+          await supabase.from('financial_transactions').insert(sinalPayload)
+        }
+      }
+
+      // 1.2 Gerenciar Transação do Saldo Restante
+      if (remainingAmount > 0) {
+        const isRemainingPaid = status === 'completed' || remainingTx?.status === 'paid'
+        const remainingPaidDate = isRemainingPaid ? (remainingTx?.paid_date || today) : null
+        const remainingTxStatus = status === 'canceled' ? 'canceled' : (isRemainingPaid ? 'paid' : 'pending')
+
+        if (remainingTx && remainingTx.id !== sinalTx?.id) {
+          await supabase
+            .from('financial_transactions')
+            .update({
+              amount: remainingAmount,
+              description: `Saldo Restante - Evento: ${title}`,
+              due_date: event_date,
+              contact_id: client_id || null,
+              status: remainingTxStatus,
+              paid_date: remainingPaidDate,
+            })
+            .eq('id', remainingTx.id)
+        } else {
+          const remPayload: any = {
+            event_id: eventId,
+            contact_id: client_id || null,
+            type: 'income',
+            amount: remainingAmount,
+            description: `Saldo Restante - Evento: ${title}`,
+            due_date: event_date,
+            status: remainingTxStatus,
+            paid_date: remainingPaidDate,
+            created_by: userId || null,
+          }
+          let res = await supabase.from('financial_transactions').insert(remPayload)
+          if (res.error && (res.error.code === 'PGRST204' || res.error.message?.includes('created_by'))) {
+            delete remPayload.created_by
+            await supabase.from('financial_transactions').insert(remPayload)
+          }
+        }
+      } else if (remainingTx && remainingTx.id !== sinalTx?.id) {
+        await supabase.from('financial_transactions').delete().eq('id', remainingTx.id)
+      }
+    } else if (budget > 0) {
+      // Caso B: Não há sinal (sinal = 0), mas há orçamento total
+      let mainTx = txs[0]
+      const isMainPaid = status === 'completed' || mainTx?.status === 'paid'
+      const mainPaidDate = isMainPaid ? (mainTx?.paid_date || today) : null
+      const mainTxStatus = status === 'canceled' ? 'canceled' : (isMainPaid ? 'paid' : 'pending')
+
+      if (mainTx) {
+        await supabase
+          .from('financial_transactions')
+          .update({
+            amount: budget,
+            description: `Contrato Evento: ${title}`,
+            due_date: event_date,
+            contact_id: client_id || null,
+            status: mainTxStatus,
+            paid_date: mainPaidDate,
+          })
+          .eq('id', mainTx.id)
+
+        if (txs.length > 1) {
+          const excessIds = txs.slice(1).map((t) => t.id)
+          await supabase.from('financial_transactions').delete().in('id', excessIds)
+        }
+      } else {
+        const txPayload: any = {
+          event_id: eventId,
+          contact_id: client_id || null,
+          type: 'income',
+          amount: budget,
+          description: `Contrato Evento: ${title}`,
+          due_date: event_date,
+          status: mainTxStatus,
+          paid_date: mainPaidDate,
+          created_by: userId || null,
+        }
+        let res = await supabase.from('financial_transactions').insert(txPayload)
+        if (res.error && (res.error.code === 'PGRST204' || res.error.message?.includes('created_by'))) {
+          delete txPayload.created_by
+          await supabase.from('financial_transactions').insert(txPayload)
+        }
+      }
+    } else {
+      // Caso C: Orçamento zerado -> remove receitas
+      if (txs.length > 0) {
+        const ids = txs.map((t) => t.id)
+        await supabase.from('financial_transactions').delete().in('id', ids)
+      }
+    }
+  } catch (err) {
+    console.warn('Aviso ao sincronizar transações do evento:', err)
+  }
+}
 
 export async function createEvent(formData: FormData) {
   const headersList = await headers()
   const userId = headersList.get('x-user-id') || null
-  const role = headersList.get('x-user-role') || 'leitura'
 
   const supabase = createAdminClient()
-  if (userId) {
-    await supabase.rpc('set_user_context', { p_user_id: userId, p_role: role })
-  }
 
   const title = (formData.get('title') as string)?.trim()
   const client_id = (formData.get('client_id') as string) || null
   const event_date = formData.get('event_date') as string
   const location = (formData.get('location') as string)?.trim() || null
   const budget = Number(formData.get('budget')) || 0
+  const deposit_amount = Math.max(0, Number(formData.get('deposit_amount')) || 0)
+  const deposit_status = (formData.get('deposit_status') as 'pending' | 'paid') || 'pending'
   const status = (formData.get('status') as string) || 'budget'
+  const today = new Date().toISOString().split('T')[0]
+  const deposit_paid_date = deposit_status === 'paid' ? today : null
 
   if (!title || !event_date) {
     return { error: 'O título e a data do evento são obrigatórios.' }
@@ -31,6 +215,9 @@ export async function createEvent(formData: FormData) {
     event_date,
     location,
     budget,
+    deposit_amount,
+    deposit_status,
+    deposit_paid_date,
     status,
   }
 
@@ -44,14 +231,13 @@ export async function createEvent(formData: FormData) {
     .select('id')
     .maybeSingle()
 
-  // Fallback: se a coluna created_by não existir na tabela events do Supabase ou estiver ausente no schema cache
-  if (
-    error &&
-    (error.message?.includes('created_by') ||
-      error.details?.includes('created_by') ||
-      error.code === 'PGRST204')
-  ) {
+  // Fallback se colunas novas ou created_by ainda não estiverem no schema cache
+  if (error && (error.code === 'PGRST204' || error.message?.includes('deposit_') || error.message?.includes('created_by'))) {
     delete insertData.created_by
+    delete insertData.deposit_amount
+    delete insertData.deposit_status
+    delete insertData.deposit_paid_date
+
     const retry = await supabase
       .from('events')
       .insert(insertData)
@@ -68,26 +254,22 @@ export async function createEvent(formData: FormData) {
 
   const newEventId = insertedEvent?.id
 
-  // 💰 Conexão Automática com o Financeiro:
-  // Se o evento possuir valor orçado/contratado (> 0), gera a receita no financeiro
-  if (newEventId && budget > 0) {
-    try {
-      await supabase.from('financial_transactions').insert({
-        event_id: newEventId,
-        contact_id: client_id || null,
-        type: 'income',
-        amount: budget,
-        description: `Contrato Evento: ${title}`,
-        due_date: event_date,
-        status: status === 'completed' ? 'paid' : 'pending',
-        paid_date: status === 'completed' ? new Date().toISOString().split('T')[0] : null,
-        created_by: userId || null,
-      })
-    } catch (err) {
-      console.warn('Aviso ao gerar receita financeira do evento:', err)
-    }
+  // 💰 Conexão Automática com o Financeiro e Dashboard
+  if (newEventId && (budget > 0 || deposit_amount > 0)) {
+    await syncEventFinancialTransactions(supabase, newEventId, {
+      title,
+      client_id,
+      event_date,
+      budget,
+      deposit_amount,
+      deposit_status,
+      deposit_paid_date,
+      status,
+      userId,
+    })
   }
 
+  invalidateCache(['eventos', 'financeiro', 'dashboard'])
   revalidatePath('/eventos')
   revalidatePath('/financeiro')
   revalidatePath('/')
@@ -98,14 +280,7 @@ export async function updateEventStatus(
   id: string,
   newStatus: 'budget' | 'approved' | 'completed' | 'canceled'
 ) {
-  const headersList = await headers()
-  const userId = headersList.get('x-user-id') || null
-  const role = headersList.get('x-user-role') || 'leitura'
-
   const supabase = createAdminClient()
-  if (userId) {
-    await supabase.rpc('set_user_context', { p_user_id: userId, p_role: role })
-  }
 
   const { error } = await supabase
     .from('events')
@@ -118,15 +293,26 @@ export async function updateEventStatus(
 
   // Sincroniza o status no financeiro
   try {
+    const today = new Date().toISOString().split('T')[0]
     if (newStatus === 'completed') {
       await supabase
         .from('financial_transactions')
         .update({
           status: 'paid',
-          paid_date: new Date().toISOString().split('T')[0],
+          paid_date: today,
         })
         .eq('event_id', id)
         .eq('type', 'income')
+
+      try {
+        await supabase
+          .from('events')
+          .update({
+            deposit_status: 'paid',
+            deposit_paid_date: today,
+          })
+          .eq('id', id)
+      } catch {}
     } else if (newStatus === 'canceled') {
       await supabase
         .from('financial_transactions')
@@ -137,6 +323,7 @@ export async function updateEventStatus(
     console.warn('Aviso ao atualizar status no financeiro:', err)
   }
 
+  invalidateCache(['eventos', 'financeiro', 'dashboard'])
   revalidatePath('/eventos')
   revalidatePath('/financeiro')
   revalidatePath('/')
@@ -144,14 +331,7 @@ export async function updateEventStatus(
 }
 
 export async function deleteEvent(id: string) {
-  const headersList = await headers()
-  const userId = headersList.get('x-user-id') || null
-  const role = headersList.get('x-user-role') || 'leitura'
-
   const supabase = createAdminClient()
-  if (userId) {
-    await supabase.rpc('set_user_context', { p_user_id: userId, p_role: role })
-  }
 
   // Exclui transações financeiras associadas ao evento
   try {
@@ -166,6 +346,7 @@ export async function deleteEvent(id: string) {
     return { error: error.message }
   }
 
+  invalidateCache(['eventos', 'financeiro', 'dashboard'])
   revalidatePath('/eventos')
   revalidatePath('/financeiro')
   revalidatePath('/')
@@ -175,12 +356,8 @@ export async function deleteEvent(id: string) {
 export async function updateEvent(formData: FormData) {
   const headersList = await headers()
   const userId = headersList.get('x-user-id') || null
-  const role = headersList.get('x-user-role') || 'leitura'
 
   const supabase = createAdminClient()
-  if (userId) {
-    await supabase.rpc('set_user_context', { p_user_id: userId, p_role: role })
-  }
 
   const id = formData.get('id') as string
   const title = (formData.get('title') as string)?.trim()
@@ -188,67 +365,60 @@ export async function updateEvent(formData: FormData) {
   const event_date = formData.get('event_date') as string
   const location = (formData.get('location') as string)?.trim() || null
   const budget = Number(formData.get('budget')) || 0
+  const deposit_amount = Math.max(0, Number(formData.get('deposit_amount')) || 0)
+  const deposit_status = (formData.get('deposit_status') as 'pending' | 'paid') || 'pending'
   const status = (formData.get('status') as string) || 'budget'
+  const today = new Date().toISOString().split('T')[0]
+  const deposit_paid_date = deposit_status === 'paid' ? today : null
 
   if (!id || !title || !event_date) {
     return { error: 'O título e a data do evento são obrigatórios.' }
   }
 
-  const { error } = await supabase
+  const updateData: Record<string, any> = {
+    title,
+    client_id: client_id || null,
+    event_date,
+    location,
+    budget,
+    deposit_amount,
+    deposit_status,
+    deposit_paid_date,
+    status,
+  }
+
+  let { error } = await supabase
     .from('events')
-    .update({
-      title,
-      client_id: client_id || null,
-      event_date,
-      location,
-      budget,
-      status,
-    })
+    .update(updateData)
     .eq('id', id)
+
+  if (error && (error.code === 'PGRST204' || error.message?.includes('deposit_'))) {
+    delete updateData.deposit_amount
+    delete updateData.deposit_status
+    delete updateData.deposit_paid_date
+    const retry = await supabase.from('events').update(updateData).eq('id', id)
+    error = retry.error
+  }
 
   if (error) {
     console.error('Erro ao atualizar evento:', error)
     return { error: error.message }
   }
 
-  // Sincronizar receita do contrato no Financeiro
-  try {
-    const { data: existingTx } = await supabase
-      .from('financial_transactions')
-      .select('id, status')
-      .eq('event_id', id)
-      .eq('type', 'income')
-      .maybeSingle()
+  // Sincronizar transações no Financeiro
+  await syncEventFinancialTransactions(supabase, id, {
+    title,
+    client_id,
+    event_date,
+    budget,
+    deposit_amount,
+    deposit_status,
+    deposit_paid_date,
+    status,
+    userId,
+  })
 
-    if (existingTx) {
-      await supabase
-        .from('financial_transactions')
-        .update({
-          amount: budget,
-          description: `Contrato Evento: ${title}`,
-          due_date: event_date,
-          contact_id: client_id || null,
-          status: status === 'completed' ? 'paid' : status === 'canceled' ? 'canceled' : existingTx.status,
-          paid_date: status === 'completed' ? new Date().toISOString().split('T')[0] : null,
-        })
-        .eq('id', existingTx.id)
-    } else if (budget > 0) {
-      await supabase.from('financial_transactions').insert({
-        event_id: id,
-        contact_id: client_id || null,
-        type: 'income',
-        amount: budget,
-        description: `Contrato Evento: ${title}`,
-        due_date: event_date,
-        status: status === 'completed' ? 'paid' : 'pending',
-        paid_date: status === 'completed' ? new Date().toISOString().split('T')[0] : null,
-        created_by: userId || null,
-      })
-    }
-  } catch (err) {
-    console.warn('Aviso ao sincronizar transação no financeiro:', err)
-  }
-
+  invalidateCache(['eventos', 'financeiro', 'dashboard'])
   revalidatePath('/eventos')
   revalidatePath('/financeiro')
   revalidatePath('/')
@@ -266,12 +436,8 @@ export async function allocateStockToEvent(
 ) {
   const headersList = await headers()
   const userId = headersList.get('x-user-id') || null
-  const role = headersList.get('x-user-role') || 'leitura'
 
   const supabase = createAdminClient()
-  if (userId) {
-    await supabase.rpc('set_user_context', { p_user_id: userId, p_role: role })
-  }
 
   if (!eventId || !items || items.length === 0) {
     return { error: 'Selecione ao menos um produto para alocar ao evento.' }
@@ -298,16 +464,16 @@ export async function allocateStockToEvent(
       .eq('id', item.productId)
       .single()
 
-    if (prodErr || !prod) {
-      return { error: `Produto não encontrado (ID: ${item.productId})` }
-    }
+  if (prodErr || !prod) {
+    return { error: `Produto não encontrado (ID: ${item.productId})` }
+  }
 
-    if (prod.current_stock < item.quantity) {
-      return {
-        error: `Estoque insuficiente para "${prod.name}"! Saldo disponível: ${prod.current_stock}, solicitado: ${item.quantity}.`,
-      }
+  if (prod.current_stock < item.quantity) {
+    return {
+      error: `Estoque insuficiente para "${prod.name}"! Saldo disponível: ${prod.current_stock}, solicitado: ${item.quantity}.`,
     }
   }
+}
 
   // 3. Executar saídas no estoque
   for (const item of items) {
@@ -366,6 +532,7 @@ export async function allocateStockToEvent(
     console.error('Erro ao registrar alocação em audit_logs:', e)
   }
 
+  invalidateCache(['eventos', 'estoque', 'dashboard'])
   revalidatePath('/eventos')
   revalidatePath('/estoque')
   revalidatePath('/')
@@ -389,12 +556,8 @@ export async function returnEventWithInspection(
 ) {
   const headersList = await headers()
   const userId = headersList.get('x-user-id') || null
-  const role = headersList.get('x-user-role') || 'leitura'
 
   const supabase = createAdminClient()
-  if (userId) {
-    await supabase.rpc('set_user_context', { p_user_id: userId, p_role: role })
-  }
 
   const { data: event, error: eventErr } = await supabase
     .from('events')
@@ -503,6 +666,7 @@ export async function returnEventWithInspection(
     console.error('Erro ao gravar log da conferência:', e)
   }
 
+  invalidateCache(['eventos', 'estoque', 'dashboard'])
   revalidatePath('/eventos')
   revalidatePath('/estoque')
   revalidatePath('/')
@@ -522,12 +686,8 @@ export async function assignStaffToEvent(
 ): Promise<{ success?: boolean; error?: string }> {
   const headersList = await headers()
   const userId = headersList.get('x-user-id') || null
-  const role = headersList.get('x-user-role') || 'leitura'
 
   const supabase = createAdminClient()
-  if (userId) {
-    await supabase.rpc('set_user_context', { p_user_id: userId, p_role: role })
-  }
 
   // 1. Obter data do evento atual
   const { data: currentEvent } = await supabase
@@ -548,7 +708,7 @@ export async function assignStaffToEvent(
     .neq('id', eventId)
     .neq('status', 'canceled')
 
-  const otherEventIds = (sameDayEvents || []).map((e) => e.id)
+  const otherEventIds = (sameDayEvents || []).map((e: any) => e.id)
   let doubleShiftEmployees: string[] = []
   if (otherEventIds.length > 0) {
     try {
@@ -559,7 +719,7 @@ export async function assignStaffToEvent(
 
       if (conflicts && conflicts.length > 0) {
         for (const input of staffList) {
-          const found = conflicts.find((c) => c.employee_id === input.employeeId)
+          const found = conflicts.find((c: any) => c.employee_id === input.employeeId)
           if (found) {
             const empName = input.employeeName || 'Colaborador'
             const conflictEventTitle = (found as any).events?.title || 'Outra festa na mesma data'
@@ -626,15 +786,20 @@ export async function assignStaffToEvent(
           })
           .eq('id', existingStaffTx.id)
       } else {
-        await supabase.from('financial_transactions').insert({
+        const txPayload: any = {
           event_id: eventId,
           type: 'expense',
           amount: totalStaffCost,
           description: desc,
           due_date: currentEvent.event_date,
           status: 'pending',
-          created_by: userId,
-        })
+          created_by: userId || null,
+        }
+        let txRes = await supabase.from('financial_transactions').insert(txPayload)
+        if (txRes.error && (txRes.error.code === 'PGRST204' || txRes.error.message?.includes('created_by'))) {
+          delete txPayload.created_by
+          await supabase.from('financial_transactions').insert(txPayload)
+        }
       }
     } else if (existingStaffTx) {
       await supabase.from('financial_transactions').delete().eq('id', existingStaffTx.id)
@@ -643,6 +808,7 @@ export async function assignStaffToEvent(
     console.warn('Aviso ao sincronizar diárias no financeiro:', err)
   }
 
+  invalidateCache(['eventos', 'funcionarios', 'financeiro', 'dashboard'])
   revalidatePath('/eventos')
   revalidatePath('/funcionarios')
   revalidatePath('/financeiro')
@@ -651,14 +817,7 @@ export async function assignStaffToEvent(
 }
 
 export async function removeStaffFromEvent(eventId: string, employeeId: string) {
-  const headersList = await headers()
-  const userId = headersList.get('x-user-id') || null
-  const role = headersList.get('x-user-role') || 'leitura'
-
   const supabase = createAdminClient()
-  if (userId) {
-    await supabase.rpc('set_user_context', { p_user_id: userId, p_role: role })
-  }
 
   try {
     await supabase
@@ -668,8 +827,67 @@ export async function removeStaffFromEvent(eventId: string, employeeId: string) 
       .eq('employee_id', employeeId)
   } catch {}
 
+  invalidateCache(['eventos', 'funcionarios', 'financeiro', 'dashboard'])
   revalidatePath('/eventos')
   revalidatePath('/funcionarios')
+  revalidatePath('/financeiro')
+  revalidatePath('/')
+  return { success: true }
+}
+
+export async function updateEventDepositStatus(
+  eventId: string,
+  newDepositStatus: 'pending' | 'paid'
+) {
+  const headersList = await headers()
+  const userId = headersList.get('x-user-id') || null
+
+  const supabase = createAdminClient()
+  const today = new Date().toISOString().split('T')[0]
+
+  const { data: event, error: fetchErr } = await supabase
+    .from('events')
+    .select('id, title, budget, deposit_amount, deposit_status, client_id, event_date, status')
+    .eq('id', eventId)
+    .single()
+
+  if (fetchErr || !event) {
+    return { error: 'Evento não encontrado.' }
+  }
+
+  const deposit_amount = Number(event.deposit_amount) || 0
+  const deposit_paid_date = newDepositStatus === 'paid' ? today : null
+
+  // 1. Atualizar tabela events
+  let updateData: Record<string, any> = {
+    deposit_status: newDepositStatus,
+    deposit_paid_date: deposit_paid_date,
+  }
+
+  let { error: updateEvtErr } = await supabase
+    .from('events')
+    .update(updateData)
+    .eq('id', eventId)
+
+  if (updateEvtErr && (updateEvtErr.code === 'PGRST204' || updateEvtErr.message?.includes('deposit_'))) {
+    console.warn('Aviso: colunas de sinal ainda não sincronizadas no banco events:', updateEvtErr.message)
+  }
+
+  // 2. Sincronizar transações no financeiro (faz o sinal subir no Dashboard imediatamente ao marcar como Pago!)
+  await syncEventFinancialTransactions(supabase, eventId, {
+    title: event.title,
+    client_id: event.client_id,
+    event_date: event.event_date,
+    budget: Number(event.budget) || 0,
+    deposit_amount: deposit_amount,
+    deposit_status: newDepositStatus,
+    deposit_paid_date: deposit_paid_date,
+    status: event.status,
+    userId,
+  })
+
+  invalidateCache(['eventos', 'financeiro', 'dashboard'])
+  revalidatePath('/eventos')
   revalidatePath('/financeiro')
   revalidatePath('/')
   return { success: true }
@@ -678,16 +896,12 @@ export async function removeStaffFromEvent(eventId: string, employeeId: string) 
 export async function receiveEventContractPayment(eventId: string) {
   const headersList = await headers()
   const userId = headersList.get('x-user-id') || null
-  const role = headersList.get('x-user-role') || 'leitura'
 
   const supabase = createAdminClient()
-  if (userId) {
-    await supabase.rpc('set_user_context', { p_user_id: userId, p_role: role })
-  }
 
   const { data: event } = await supabase
     .from('events')
-    .select('id, title, budget, client_id, event_date')
+    .select('id, title, budget, deposit_amount, deposit_status, client_id, event_date, status')
     .eq('id', eventId)
     .single()
 
@@ -695,36 +909,30 @@ export async function receiveEventContractPayment(eventId: string) {
 
   const today = new Date().toISOString().split('T')[0]
 
-  // Buscar transação de receita existente
-  const { data: existingTx } = await supabase
+  // Marca todas as transações de receita deste evento como pagas
+  await supabase
     .from('financial_transactions')
-    .select('id')
-    .eq('event_id', eventId)
-    .eq('type', 'income')
-    .maybeSingle()
-
-  if (existingTx) {
-    await supabase
-      .from('financial_transactions')
-      .update({
-        status: 'paid',
-        paid_date: today,
-      })
-      .eq('id', existingTx.id)
-  } else {
-    await supabase.from('financial_transactions').insert({
-      event_id: eventId,
-      contact_id: event.client_id,
-      type: 'income',
-      amount: Number(event.budget) || 0,
-      description: `Contrato Evento: ${event.title}`,
-      due_date: event.event_date,
+    .update({
       status: 'paid',
       paid_date: today,
-      created_by: userId,
     })
+    .eq('event_id', eventId)
+    .eq('type', 'income')
+
+  // Se o sinal ou contrato do evento estavam pendentes, atualiza o evento
+  try {
+    await supabase
+      .from('events')
+      .update({
+        deposit_status: 'paid',
+        deposit_paid_date: today,
+      })
+      .eq('id', eventId)
+  } catch (err) {
+    console.warn('Aviso ao atualizar deposit_status no evento:', err)
   }
 
+  invalidateCache(['eventos', 'financeiro', 'dashboard'])
   revalidatePath('/eventos')
   revalidatePath('/financeiro')
   revalidatePath('/')

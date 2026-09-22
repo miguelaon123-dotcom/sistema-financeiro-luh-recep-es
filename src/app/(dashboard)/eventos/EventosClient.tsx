@@ -34,6 +34,7 @@ import {
   createEvent,
   updateEvent,
   updateEventStatus,
+  updateEventDepositStatus,
   deleteEvent,
   allocateStockToEvent,
   returnEventWithInspection,
@@ -61,6 +62,9 @@ interface EventItem {
   event_date: string
   location?: string | null
   budget?: number | null
+  deposit_amount?: number | null
+  deposit_status?: 'pending' | 'paid' | null
+  deposit_paid_date?: string | null
   status: 'budget' | 'approved' | 'completed' | 'canceled'
   contacts?: { id: string; name: string } | null
   financial_transactions?: EventTransaction[]
@@ -134,10 +138,25 @@ export function EventosClient({
   const [filterStatus, setFilterStatus] = useState<string>('all')
   const [isModalOpen, setIsModalOpen] = useState(initialOpenModal)
   const [editingEvent, setEditingEvent] = useState<EventItem | null>(null)
+  const [modalBudget, setModalBudget] = useState<string>('')
+  const [modalDepositAmount, setModalDepositAmount] = useState<string>('')
+  const [modalDepositStatus, setModalDepositStatus] = useState<'pending' | 'paid'>('pending')
   const [isPending, startTransition] = useTransition()
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const { confirm, ConfirmDialog } = useConfirm()
+
+  useEffect(() => {
+    if (editingEvent) {
+      setModalBudget(editingEvent.budget ? String(editingEvent.budget) : '')
+      setModalDepositAmount(editingEvent.deposit_amount ? String(editingEvent.deposit_amount) : '')
+      setModalDepositStatus(editingEvent.deposit_status === 'paid' ? 'paid' : 'pending')
+    } else {
+      setModalBudget('')
+      setModalDepositAmount('')
+      setModalDepositStatus('pending')
+    }
+  }, [editingEvent, isModalOpen])
 
   // Modais de Materiais, Devolução e Escala de Equipe
   const [allocatingEvent, setAllocatingEvent] = useState<EventItem | null>(null)
@@ -311,12 +330,46 @@ export function EventosClient({
         const txs = (e.financial_transactions || []).map((t) =>
           t.type === 'income' ? { ...t, status: 'paid' as const } : t
         )
-        return { ...e, financial_transactions: txs }
+        return { ...e, deposit_status: 'paid', financial_transactions: txs }
       })
     )
 
     startTransition(async () => {
       const res = await receiveEventContractPayment(eventId)
+      if (res?.error) alert(res.error)
+      setActionLoadingId(null)
+      router.refresh()
+    })
+  }
+
+  // Alternar status de pagamento do Sinal (Pago / Pendente)
+  const handleToggleDepositStatus = (eventId: string, newStatus: 'pending' | 'paid') => {
+    setActionLoadingId(eventId)
+    // Atualização otimista imediata
+    setLocalEvents((prev) =>
+      prev.map((e) => {
+        if (e.id !== eventId) return e
+        const updatedTxs = (e.financial_transactions || []).map((t) => {
+          if (t.description?.toLowerCase().includes('sinal')) {
+            return {
+              ...t,
+              status: newStatus,
+              paid_date: newStatus === 'paid' ? new Date().toISOString().split('T')[0] : null,
+            }
+          }
+          return t
+        })
+        return {
+          ...e,
+          deposit_status: newStatus,
+          deposit_paid_date: newStatus === 'paid' ? new Date().toISOString().split('T')[0] : null,
+          financial_transactions: updatedTxs,
+        }
+      })
+    )
+
+    startTransition(async () => {
+      const res = await updateEventDepositStatus(eventId, newStatus)
       if (res?.error) alert(res.error)
       setActionLoadingId(null)
       router.refresh()
@@ -682,12 +735,6 @@ Por favor, confirmem presença com antecedência! ✅`
                             : '0,00'}
                         </span>
                       </p>
-                      <p className="flex items-center gap-2 text-[#1d1d1f]">
-                        <User className="h-3.5 w-3.5 text-[#86868b]" />
-                        <span>
-                          Cliente: <strong>{evt.contacts?.name || 'Não definido'}</strong>
-                        </span>
-                      </p>
 
                       {/* Status de Materiais do Estoque */}
                       <div className="pt-2 border-t border-[#f2f2f7] mt-3 space-y-1.5">
@@ -730,37 +777,147 @@ Por favor, confirmem presença com antecedência! ✅`
                           )}
                         </div>
 
-                        {/* 💰 Painel Financeiro Conectado */}
+                        {/* 💰 Painel Financeiro Conectado com Sinal e Saldo Restante */}
                         {Number(evt.budget || 0) > 0 && (
-                          <div className="flex items-center justify-between text-xs bg-[#fdfcf7] border border-[#f3e8c8] p-2 rounded-xl text-[#78350f]">
-                            <div className="flex items-center gap-1.5 font-medium">
-                              <Wallet size={13} className="text-[#b45309]" />
-                              <span>
-                                Contrato: <strong>R$ {Number(evt.budget).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong>
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-1.5">
-                              <span
-                                className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${
-                                  isContractPaid
-                                    ? 'bg-[#dcfce7] text-[#15803d]'
-                                    : 'bg-[#fef3c7] text-[#b45309]'
-                                }`}
-                              >
-                                {isContractPaid ? '✓ Recebido' : 'Aguardando'}
-                              </span>
-                              {!isContractPaid && (
-                                <button
-                                  type="button"
-                                  onClick={() => handleReceiveContract(evt.id)}
-                                  disabled={actionLoadingId === evt.id}
-                                  className="text-[10px] font-semibold text-[#0071e3] hover:underline cursor-pointer bg-[#ebf4fe] px-1.5 py-0.5 rounded"
-                                  title="Marcar contrato como recebido no Financeiro"
-                                >
-                                  Receber
-                                </button>
-                              )}
-                            </div>
+                          <div className="pt-2 border-t border-[#f2f2f7] mt-3 space-y-2">
+                            {Number(evt.deposit_amount || 0) > 0 ? (
+                              <>
+                                {/* Bloco do Sinal / Entrada */}
+                                <div className="flex items-center justify-between text-xs bg-[#fdfcf7] border border-[#f3e8c8] p-2.5 rounded-xl text-[#78350f]">
+                                  <div className="flex items-center gap-1.5 min-w-0">
+                                    <DollarSign size={14} className="text-[#b45309] shrink-0" />
+                                    <div className="truncate">
+                                      <span className="text-[10px] uppercase font-bold text-[#b45309] block tracking-wider">
+                                        Sinal / Entrada
+                                      </span>
+                                      <span className="font-bold text-xs text-[#1d1d1f]">
+                                        R$ {Number(evt.deposit_amount).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                      </span>
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center gap-1.5 shrink-0">
+                                    {(() => {
+                                      const isSinalPaid =
+                                        evt.deposit_status === 'paid' ||
+                                        evt.status === 'completed' ||
+                                        (evt.financial_transactions || []).some(
+                                          (t) => t.description?.toLowerCase().includes('sinal') && t.status === 'paid'
+                                        )
+                                      return (
+                                        <>
+                                          <span
+                                            className={`text-[10px] font-bold px-2 py-0.5 rounded-md flex items-center gap-1 ${
+                                              isSinalPaid
+                                                ? 'bg-[#dcfce7] text-[#15803d]'
+                                                : 'bg-[#fef3c7] text-[#b45309]'
+                                            }`}
+                                          >
+                                            {isSinalPaid ? <Check size={11} /> : <Clock size={11} />}
+                                            {isSinalPaid ? 'Pago' : 'Pendente'}
+                                          </span>
+                                          <button
+                                            type="button"
+                                            onClick={() => handleToggleDepositStatus(evt.id, isSinalPaid ? 'pending' : 'paid')}
+                                            disabled={actionLoadingId === evt.id}
+                                            className={`text-[10px] font-semibold px-2 py-1 rounded-lg transition-all cursor-pointer ${
+                                              isSinalPaid
+                                                ? 'text-[#86868b] hover:text-[#cf222e] hover:bg-[#feeceb]'
+                                                : 'bg-[#15803d] text-white hover:bg-[#166534] shadow-xs active:scale-95'
+                                            }`}
+                                            title={
+                                              isSinalPaid
+                                                ? 'Marcar sinal como pendente'
+                                                : 'Marcar sinal como pago (sobe no Dashboard)'
+                                            }
+                                          >
+                                            {isSinalPaid ? 'Desfazer' : 'Marcar Pago'}
+                                          </button>
+                                        </>
+                                      )
+                                    })()}
+                                  </div>
+                                </div>
+
+                                {/* Bloco do Saldo Restante */}
+                                <div className="flex items-center justify-between text-xs bg-[#f8fafc] border border-[#e2e8f0] p-2.5 rounded-xl text-[#334155]">
+                                  <div className="flex items-center gap-1.5 min-w-0">
+                                    <Wallet size={14} className="text-[#64748b] shrink-0" />
+                                    <div className="truncate">
+                                      <span className="text-[10px] uppercase font-bold text-[#64748b] block tracking-wider">
+                                        Saldo Restante (Total R$ {Number(evt.budget).toLocaleString('pt-BR', { minimumFractionDigits: 2 })})
+                                      </span>
+                                      <span className="font-bold text-xs text-[#1d1d1f]">
+                                        R$ {Math.max(0, Number(evt.budget || 0) - Number(evt.deposit_amount || 0)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                      </span>
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center gap-1.5 shrink-0">
+                                    {(() => {
+                                      const remainingTx = (evt.financial_transactions || []).find(
+                                        (t) => !t.description?.toLowerCase().includes('sinal') && t.type === 'income'
+                                      )
+                                      const isRemainingPaid = evt.status === 'completed' || remainingTx?.status === 'paid'
+                                      return (
+                                        <>
+                                          <span
+                                            className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${
+                                              isRemainingPaid
+                                                ? 'bg-[#dcfce7] text-[#15803d]'
+                                                : 'bg-[#f1f5f9] text-[#64748b]'
+                                            }`}
+                                          >
+                                            {isRemainingPaid ? '✓ Quitado' : 'Aguardando'}
+                                          </span>
+                                          {!isRemainingPaid && (
+                                            <button
+                                              type="button"
+                                              onClick={() => handleReceiveContract(evt.id)}
+                                              disabled={actionLoadingId === evt.id}
+                                              className="text-[10px] font-semibold text-[#0071e3] hover:underline cursor-pointer bg-[#ebf4fe] px-2 py-0.5 rounded"
+                                              title="Receber saldo restante no Financeiro"
+                                            >
+                                              Receber
+                                            </button>
+                                          )}
+                                        </>
+                                      )
+                                    })()}
+                                  </div>
+                                </div>
+                              </>
+                            ) : (
+                              /* Sem sinal -> Exibição do Contrato Completo */
+                              <div className="flex items-center justify-between text-xs bg-[#fdfcf7] border border-[#f3e8c8] p-2 rounded-xl text-[#78350f]">
+                                <div className="flex items-center gap-1.5 font-medium">
+                                  <Wallet size={13} className="text-[#b45309]" />
+                                  <span>
+                                    Contrato: <strong>R$ {Number(evt.budget).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong>
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-1.5">
+                                  <span
+                                    className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${
+                                      isContractPaid
+                                        ? 'bg-[#dcfce7] text-[#15803d]'
+                                        : 'bg-[#fef3c7] text-[#b45309]'
+                                    }`}
+                                  >
+                                    {isContractPaid ? '✓ Recebido' : 'Aguardando'}
+                                  </span>
+                                  {!isContractPaid && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleReceiveContract(evt.id)}
+                                      disabled={actionLoadingId === evt.id}
+                                      className="text-[10px] font-semibold text-[#0071e3] hover:underline cursor-pointer bg-[#ebf4fe] px-1.5 py-0.5 rounded"
+                                      title="Marcar contrato como recebido no Financeiro"
+                                    >
+                                      Receber
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            )}
                           </div>
                         )}
 
@@ -1532,24 +1689,6 @@ Por favor, confirmem presença com antecedência! ✅`
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-[#1d1d1f] mb-1">
-                    Cliente Solicitante
-                  </label>
-                  <select
-                    name="client_id"
-                    defaultValue={editingEvent?.contacts?.id || ''}
-                    className="w-full rounded-xl border border-[#d1d1d6] bg-white px-3.5 py-2 text-sm text-[#1d1d1f] focus:border-[#1d1d1f] focus:outline-none focus:ring-1 focus:ring-[#1d1d1f] transition-all"
-                  >
-                    <option value="">Selecione um cliente...</option>
-                    {contacts.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-[#1d1d1f] mb-1">
                     Data do Evento *
                   </label>
                   <input
@@ -1560,9 +1699,7 @@ Por favor, confirmem presença com antecedência! ✅`
                     className="w-full rounded-xl border border-[#d1d1d6] bg-white px-3.5 py-2 text-sm text-[#1d1d1f] focus:border-[#1d1d1f] focus:outline-none focus:ring-1 focus:ring-[#1d1d1f] transition-all"
                   />
                 </div>
-              </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-[#1d1d1f] mb-1">
                     Local do Evento
@@ -1575,36 +1712,115 @@ Por favor, confirmem presença com antecedência! ✅`
                     className="w-full rounded-xl border border-[#d1d1d6] bg-white px-3.5 py-2 text-sm text-[#1d1d1f] placeholder-[#86868b] focus:border-[#1d1d1f] focus:outline-none focus:ring-1 focus:ring-[#1d1d1f] transition-all"
                   />
                 </div>
+              </div>
 
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-[#1d1d1f] mb-1">
-                    Orçamento / Valor Fechado (R$)
+                    Valor Total do Contrato (R$) *
                   </label>
                   <input
                     type="number"
                     step="0.01"
                     name="budget"
-                    defaultValue={editingEvent?.budget ? Number(editingEvent.budget) : ''}
+                    value={modalBudget}
+                    onChange={(e) => setModalBudget(e.target.value)}
                     placeholder="0,00"
                     className="w-full rounded-xl border border-[#d1d1d6] bg-white px-3.5 py-2 text-sm text-[#1d1d1f] placeholder-[#86868b] focus:border-[#1d1d1f] focus:outline-none focus:ring-1 focus:ring-[#1d1d1f] transition-all"
                   />
                 </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-[#1d1d1f] mb-1">
+                    Status do Evento
+                  </label>
+                  <select
+                    name="status"
+                    defaultValue={editingEvent?.status || 'budget'}
+                    className="w-full rounded-xl border border-[#d1d1d6] bg-white px-3.5 py-2 text-sm text-[#1d1d1f] focus:border-[#1d1d1f] focus:outline-none focus:ring-1 focus:ring-[#1d1d1f] transition-all"
+                  >
+                    <option value="budget">Orçamento em Aberto</option>
+                    <option value="approved">Contrato Fechado & Aprovado</option>
+                    <option value="completed">Evento Já Realizado</option>
+                    <option value="canceled">Cancelado</option>
+                  </select>
+                </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-[#1d1d1f] mb-1">
-                  Status
-                </label>
-                <select
-                  name="status"
-                  defaultValue={editingEvent?.status || 'budget'}
-                  className="w-full rounded-xl border border-[#d1d1d6] bg-white px-3.5 py-2 text-sm text-[#1d1d1f] focus:border-[#1d1d1f] focus:outline-none focus:ring-1 focus:ring-[#1d1d1f] transition-all"
-                >
-                  <option value="budget">Orçamento em Aberto</option>
-                  <option value="approved">Contrato Fechado & Aprovado</option>
-                  <option value="completed">Evento Já Realizado</option>
-                  <option value="canceled">Cancelado</option>
-                </select>
+              {/* Configuração de Sinal / Entrada */}
+              <div className="p-3.5 rounded-2xl bg-[#fbfbfd] border border-[#e5e5ea] space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-[#1d1d1f]">
+                    <DollarSign size={15} className="text-[#b8860b]" />
+                    <span>Sinal / Entrada (Opcional)</span>
+                  </div>
+                  <span className="text-[11px] text-[#86868b]">
+                    Controle de pagamento separado
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-[#1d1d1f] mb-1">
+                      Valor do Sinal (R$)
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      name="deposit_amount"
+                      value={modalDepositAmount}
+                      onChange={(e) => setModalDepositAmount(e.target.value)}
+                      placeholder="0,00"
+                      className="w-full rounded-xl border border-[#d1d1d6] bg-white px-3.5 py-2 text-sm text-[#1d1d1f] placeholder-[#86868b] focus:border-[#1d1d1f] focus:outline-none focus:ring-1 focus:ring-[#1d1d1f] transition-all"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-[#1d1d1f] mb-1">
+                      Status do Sinal
+                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setModalDepositStatus('pending')}
+                        className={`py-2 px-3 text-xs font-semibold rounded-xl border transition-all cursor-pointer text-center ${
+                          modalDepositStatus === 'pending'
+                            ? 'bg-[#fff8e6] border-[#b8860b] text-[#b8860b] shadow-xs'
+                            : 'bg-white border-[#d1d1d6] text-[#6e6e73] hover:bg-[#f5f5f7]'
+                        }`}
+                      >
+                        ⏳ Pendente
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setModalDepositStatus('paid')}
+                        className={`py-2 px-3 text-xs font-semibold rounded-xl border transition-all cursor-pointer text-center ${
+                          modalDepositStatus === 'paid'
+                            ? 'bg-[#e8f8ee] border-[#1a7f37] text-[#1a7f37] shadow-xs'
+                            : 'bg-white border-[#d1d1d6] text-[#6e6e73] hover:bg-[#f5f5f7]'
+                        }`}
+                      >
+                        ✓ Pago
+                      </button>
+                      <input type="hidden" name="deposit_status" value={modalDepositStatus} />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Resumo Financeiro no Modal */}
+                {Number(modalBudget) > 0 && (
+                  <div className="pt-2 border-t border-[#ededf2] flex items-center justify-between text-xs text-[#6e6e73]">
+                    <span>
+                      Sinal: <strong>R$ {(Number(modalDepositAmount) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong> ({modalDepositStatus === 'paid' ? 'Pago' : 'Pendente'})
+                    </span>
+                    <span>
+                      Saldo Restante:{' '}
+                      <strong className="text-[#1d1d1f]">
+                        R$ {Math.max(0, (Number(modalBudget) || 0) - (Number(modalDepositAmount) || 0)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                      </strong>
+                    </span>
+                  </div>
+                )}
               </div>
 
               <div className="flex justify-end gap-2.5 pt-4 border-t border-[#f2f2f7]">

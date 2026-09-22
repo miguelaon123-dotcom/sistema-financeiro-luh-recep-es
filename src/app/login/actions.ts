@@ -18,11 +18,13 @@ export async function login(formData: FormData) {
   const supabase = createAdminClient()
 
   // 1. Buscar o usuário na tabela customizada
-  const { data: user, error } = await supabase
+  const { data: userData, error } = await (supabase as any)
     .from('users')
     .select('id, name, email, password_hash, role, active')
     .eq('email', email)
     .single()
+
+  const user = userData as any
 
   // Mensagem genérica — nunca revelar se email existe ou não (enumeração)
   if (error || !user) {
@@ -49,7 +51,7 @@ export async function login(formData: FormData) {
   }, rememberMe)
 
   // 5. Atualizar last_login (sem bloquear o fluxo)
-  supabase
+  ;(supabase as any)
     .from('users')
     .update({ last_login: new Date().toISOString() })
     .eq('id', user.id)

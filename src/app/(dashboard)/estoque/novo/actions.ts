@@ -4,14 +4,13 @@ import { createAdminClient } from '@/lib/supabase/server'
 import { headers } from 'next/headers'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
+import { invalidateCache } from '@/lib/data-cache'
 
 export async function createProduct(formData: FormData) {
   const headersList = await headers()
   const userId = headersList.get('x-user-id') || ''
-  const role = headersList.get('x-user-role') || 'leitura'
 
   const supabase = createAdminClient()
-  await supabase.rpc('set_user_context', { p_user_id: userId, p_role: role })
 
   const name = formData.get('name') as string
   const sku = formData.get('sku') as string
@@ -107,6 +106,7 @@ export async function createProduct(formData: FormData) {
     }
   }
 
+  invalidateCache(['estoque', 'dashboard'])
   revalidatePath('/estoque')
   redirect('/estoque')
 }

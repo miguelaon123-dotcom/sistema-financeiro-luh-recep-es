@@ -51,14 +51,6 @@ body {
   font-family: var(--font-sans), -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  transition: background 0.2s ease, color 0.2s ease;
-}
-
-/* Transição suave para todos os elementos */
-*, *::before, *::after {
-  transition-property: background-color, border-color, color;
-  transition-duration: 0.15s;
-  transition-timing-function: ease;
 }
 
 /* ── DARK MODE: componentes específicos ──────────────── */
@@ -88,4 +80,3 @@ html.dark input::placeholder,
 html.dark textarea::placeholder {
   color: #71717a !important;
 }
-

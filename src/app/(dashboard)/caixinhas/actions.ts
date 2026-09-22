@@ -3,6 +3,7 @@
 import { createAdminClient } from '@/lib/supabase/server'
 import { headers } from 'next/headers'
 import { revalidatePath } from 'next/cache'
+import { invalidateCache } from '@/lib/data-cache'
 
 export interface Caixinha {
   id: string
@@ -22,6 +23,16 @@ function isValidUuid(id: string): boolean {
 }
 
 const DEFAULT_CAIXINHAS: Caixinha[] = [
+  {
+    id: '55555555-5555-4555-8555-555555555555',
+    name: 'Caixa de Fornecedores',
+    current_balance: 0,
+    target_balance: 5000,
+    category: 'fornecedores',
+    color: '#d97706', // Âmbar / Laranja
+    icon: 'truck',
+    notes: 'Reserva financeira dedicada exclusivamente ao pagamento de contas e boletos de fornecedores',
+  },
   {
     id: '11111111-1111-4111-8111-111111111111',
     name: 'Reserva de Emergência',
@@ -103,10 +114,14 @@ export async function getCaixinhas(): Promise<Caixinha[]> {
       }
     }
 
-    return Object.values(map)
+    const result = Object.values(map)
+    if (result.length === 0) {
+      return DEFAULT_CAIXINHAS
+    }
+    return result
   } catch (error) {
     console.error('Erro ao buscar caixinhas:', error)
-    return []
+    return DEFAULT_CAIXINHAS
   }
 }
 
@@ -210,6 +225,7 @@ export async function createCaixinha(formData: FormData) {
     return { error: 'Erro ao salvar caixinha: ' + error.message }
   }
 
+  invalidateCache()
   revalidatePath('/')
   revalidatePath('/financeiro')
   return { success: true, caixinha }
@@ -261,6 +277,7 @@ export async function updateCaixinha(formData: FormData) {
     return { error: error.message }
   }
 
+  invalidateCache()
   revalidatePath('/')
   revalidatePath('/financeiro')
   return { success: true }
@@ -318,6 +335,7 @@ export async function editCaixinhaBalance(formData: FormData) {
     return { error: error.message }
   }
 
+  invalidateCache()
   revalidatePath('/')
   revalidatePath('/financeiro')
   return { success: true }
@@ -368,6 +386,7 @@ export async function depositToCaixinha(formData: FormData) {
     return { error: error.message }
   }
 
+  invalidateCache()
   revalidatePath('/')
   revalidatePath('/financeiro')
   return { success: true }
@@ -420,6 +439,7 @@ export async function withdrawFromCaixinha(formData: FormData) {
     return { error: error.message }
   }
 
+  invalidateCache()
   revalidatePath('/')
   revalidatePath('/financeiro')
   return { success: true }
@@ -460,6 +480,7 @@ export async function deleteCaixinha(id: string) {
     return { error: error.message }
   }
 
+  invalidateCache()
   revalidatePath('/')
   revalidatePath('/financeiro')
   return { success: true }

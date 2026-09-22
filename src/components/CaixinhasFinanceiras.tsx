@@ -9,6 +9,7 @@ import {
   Target,
   Wrench,
   Sparkles,
+  Truck,
   ArrowDownLeft,
   ArrowUpRight,
   Pencil,
@@ -78,6 +79,8 @@ export function CaixinhasFinanceiras({
         return <Wrench size={18} />
       case 'sparkles':
         return <Sparkles size={18} />
+      case 'truck':
+        return <Truck size={18} />
       default:
         return <Wallet size={18} />
     }

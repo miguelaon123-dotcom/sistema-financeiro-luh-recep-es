@@ -3,6 +3,7 @@
 import { createAdminClient } from '@/lib/supabase/server'
 import { headers } from 'next/headers'
 import { revalidatePath } from 'next/cache'
+import { invalidateCache } from '@/lib/data-cache'
 
 export interface RentalItemInput {
   productId: string
@@ -30,12 +31,8 @@ export interface RentalPayload {
 export async function createRental(data: RentalPayload) {
   const headersList = await headers()
   const userId = headersList.get('x-user-id') || null
-  const role = headersList.get('x-user-role') || 'leitura'
 
-  const supabase = createAdminClient()
-  if (userId) {
-    await supabase.rpc('set_user_context', { p_user_id: userId, p_role: role })
-  }
+  const supabase = createAdminClient() as any
 
   if (!data.clientId || !data.startDate || !data.returnDate || !data.items || data.items.length === 0) {
     return { error: 'Preencha o cliente, datas e selecione ao menos um produto.' }
@@ -118,37 +115,44 @@ export async function createRental(data: RentalPayload) {
         .eq('id', item.productId)
         .single()
 
-      const currentStock = Number(prod?.current_stock || 0)
-      const newStock = Math.max(0, currentStock - item.quantity)
+      if (prod) {
+        const currentStock = Number(prod.current_stock || 0)
+        const newStock = Math.max(0, currentStock - item.quantity)
 
-      await supabase
-        .from('products')
-        .update({ current_stock: newStock })
-        .eq('id', item.productId)
+        await supabase
+          .from('products')
+          .update({ current_stock: newStock })
+          .eq('id', item.productId)
 
-      await supabase.from('product_movements').insert({
-        product_id: item.productId,
-        user_id: userId,
-        type: 'out',
-        quantity: item.quantity,
-        reason: `Saída para Locação ${rentalCode}`,
-      })
+        await supabase.from('product_movements').insert({
+          product_id: item.productId,
+          user_id: userId,
+          type: 'out',
+          quantity: item.quantity,
+          reason: `Saída para Locação ${rentalCode}`,
+        })
+      }
     }
   }
 
   // 5. Integração com o Financeiro (Gera receita da locação no Financeiro)
   if (totalAmount > 0) {
     try {
-      await supabase.from('financial_transactions').insert({
+      const txPayload: any = {
         type: 'income',
         amount: totalAmount,
-        contact_id: data.clientId,
+        contact_id: data.clientId || null,
         due_date: data.startDate.split('T')[0] || new Date().toISOString().split('T')[0],
         paid_date: data.paymentStatus === 'paid' ? new Date().toISOString().split('T')[0] : null,
         status: data.paymentStatus === 'paid' ? 'paid' : 'pending',
         description: `Receita de Locação ${rentalCode} (${data.items.length} itens)`,
-        created_by: userId,
-      })
+        created_by: userId || null,
+      }
+      let txRes = await supabase.from('financial_transactions').insert(txPayload)
+      if (txRes.error && (txRes.error.code === 'PGRST204' || txRes.error.message?.includes('created_by'))) {
+        delete txPayload.created_by
+        await supabase.from('financial_transactions').insert(txPayload)
+      }
     } catch (e) {
       console.error('Erro ao integrar receita da locação no financeiro:', e)
     }
@@ -174,6 +178,7 @@ export async function createRental(data: RentalPayload) {
     console.error('Erro ao gravar log de locação:', e)
   }
 
+  invalidateCache(['locacoes', 'estoque', 'financeiro', 'dashboard'])
   revalidatePath('/locacoes')
   revalidatePath('/estoque')
   revalidatePath('/financeiro')
@@ -187,16 +192,11 @@ export async function updateRentalStatus(
 ) {
   const headersList = await headers()
   const userId = headersList.get('x-user-id') || null
-  const role = headersList.get('x-user-role') || 'leitura'
 
-  const supabase = createAdminClient()
-  if (userId) {
-    await supabase.rpc('set_user_context', { p_user_id: userId, p_role: role })
-  }
+  const supabase = createAdminClient() as any
 
   // Se estiver despachando (entregando ao cliente), desconta o estoque dos itens
   if (newStatus === 'dispatched') {
-    // Buscar itens da locação
     let items: any[] = []
     const { data: dbItems } = await supabase
       .from('rental_items')
@@ -206,7 +206,6 @@ export async function updateRentalStatus(
     if (dbItems && dbItems.length > 0) {
       items = dbItems
     } else {
-      // Fallback: buscar em audit_logs
       const { data: logs } = await supabase
         .from('audit_logs')
         .select('new_data')
@@ -260,6 +259,7 @@ export async function updateRentalStatus(
     })
   } catch {}
 
+  invalidateCache(['locacoes', 'estoque', 'financeiro', 'dashboard'])
   revalidatePath('/locacoes')
   revalidatePath('/estoque')
   revalidatePath('/financeiro')
@@ -273,12 +273,8 @@ export async function updateRentalPaymentStatus(
 ) {
   const headersList = await headers()
   const userId = headersList.get('x-user-id') || null
-  const role = headersList.get('x-user-role') || 'leitura'
 
-  const supabase = createAdminClient()
-  if (userId) {
-    await supabase.rpc('set_user_context', { p_user_id: userId, p_role: role })
-  }
+  const supabase = createAdminClient() as any
 
   // 1. Atualizar na tabela rentals
   try {
@@ -298,7 +294,6 @@ export async function updateRentalPaymentStatus(
 
     const code = rent?.rental_code || rentalId
 
-    // Atualizar transação existente
     const { data: existingTxs } = await supabase
       .from('financial_transactions')
       .select('id')
@@ -314,8 +309,7 @@ export async function updateRentalPaymentStatus(
         })
         .eq('id', existingTxs[0].id)
     } else if (rent) {
-      // Se não existia, cria a transação
-      await supabase.from('financial_transactions').insert({
+      const txPayload: any = {
         type: 'income',
         amount: rent.total_amount,
         contact_id: rent.client_id,
@@ -323,13 +317,19 @@ export async function updateRentalPaymentStatus(
         paid_date: newPaymentStatus === 'paid' ? new Date().toISOString().split('T')[0] : null,
         status: newPaymentStatus,
         description: `Receita de Locação ${code}`,
-        created_by: userId,
-      })
+        created_by: userId || null,
+      }
+      let txRes = await supabase.from('financial_transactions').insert(txPayload)
+      if (txRes.error && (txRes.error.code === 'PGRST204' || txRes.error.message?.includes('created_by'))) {
+        delete txPayload.created_by
+        await supabase.from('financial_transactions').insert(txPayload)
+      }
     }
   } catch (e) {
     console.error('Erro ao sincronizar pagamento no financeiro:', e)
   }
 
+  invalidateCache(['locacoes', 'financeiro', 'dashboard'])
   revalidatePath('/locacoes')
   revalidatePath('/financeiro')
   revalidatePath('/')
@@ -340,10 +340,10 @@ export interface RentalInspectionItem {
   productId: string
   productName: string
   totalRented: number
-  returnedQty: number // Intactos (retornam ao estoque)
-  brokenQty: number   // Quebrados (baixa como perda)
-  lostQty: number     // Faltantes (baixa como perda)
-  penaltyFee: number  // Valor a cobrar
+  returnedQty: number
+  brokenQty: number
+  lostQty: number
+  penaltyFee: number
   notes?: string
 }
 
@@ -355,12 +355,8 @@ export async function returnRentalWithInspection(
 ): Promise<{ success?: boolean; error?: string }> {
   const headersList = await headers()
   const userId = headersList.get('x-user-id') || null
-  const role = headersList.get('x-user-role') || 'leitura'
 
-  const supabase = createAdminClient()
-  if (userId) {
-    await supabase.rpc('set_user_context', { p_user_id: userId, p_role: role })
-  }
+  const supabase = createAdminClient() as any
 
   let totalPenalties = 0
 
@@ -370,7 +366,6 @@ export async function returnRentalWithInspection(
     const lost = Number(item.lostQty) || 0
     totalPenalties += Number(item.penaltyFee) || 0
 
-    // 1. Itens intactos voltam ao estoque
     if (returned > 0) {
       const { data: prod } = await supabase
         .from('products')
@@ -395,7 +390,6 @@ export async function returnRentalWithInspection(
       }
     }
 
-    // 2. Quebrados são baixados como perda definitiva (loss)
     if (broken > 0) {
       await supabase.from('product_movements').insert({
         product_id: item.productId,
@@ -408,7 +402,6 @@ export async function returnRentalWithInspection(
       })
     }
 
-    // 3. Faltantes são baixados como perda definitiva (loss)
     if (lost > 0) {
       await supabase.from('product_movements').insert({
         product_id: item.productId,
@@ -421,7 +414,6 @@ export async function returnRentalWithInspection(
       })
     }
 
-    // Tenta atualizar rental_items se existir
     try {
       await supabase
         .from('rental_items')
@@ -437,7 +429,6 @@ export async function returnRentalWithInspection(
     } catch {}
   }
 
-  // Atualizar a locação como 'returned'
   try {
     await supabase
       .from('rentals')
@@ -449,10 +440,8 @@ export async function returnRentalWithInspection(
       .eq('id', rentalId)
   } catch {}
 
-  // Se o usuário optou por criar lançamento financeiro referente às avarias
   if (chargeOption === 'financial_charge' && totalPenalties > 0) {
     try {
-      // Buscar cliente da locação
       let clientId: string | null = null
       const { data: rentData } = await supabase
         .from('rentals')
@@ -461,21 +450,25 @@ export async function returnRentalWithInspection(
         .single()
       clientId = rentData?.client_id || null
 
-      await supabase.from('financial_transactions').insert({
+      const txPayload: any = {
         type: 'income',
         amount: totalPenalties,
         due_date: new Date().toISOString().split('T')[0],
         status: 'pending',
         contact_id: clientId,
         description: `Cobrança de Avarias/Quebras - Locação ${rentalCode}`,
-        created_by: userId,
-      })
+        created_by: userId || null,
+      }
+      let txRes = await supabase.from('financial_transactions').insert(txPayload)
+      if (txRes.error && (txRes.error.code === 'PGRST204' || txRes.error.message?.includes('created_by'))) {
+        delete txPayload.created_by
+        await supabase.from('financial_transactions').insert(txPayload)
+      }
     } catch (e) {
       console.error('Erro ao gerar lançamento financeiro de avaria:', e)
     }
   }
 
-  // Auditoria
   try {
     await supabase.from('audit_logs').insert({
       action: 'rental_returned_inspection',
@@ -492,6 +485,7 @@ export async function returnRentalWithInspection(
     })
   } catch {}
 
+  invalidateCache(['locacoes', 'estoque', 'financeiro', 'dashboard'])
   revalidatePath('/locacoes')
   revalidatePath('/estoque')
   revalidatePath('/financeiro')
@@ -502,12 +496,8 @@ export async function returnRentalWithInspection(
 export async function quickCreateClient(formData: FormData) {
   const headersList = await headers()
   const userId = headersList.get('x-user-id') || null
-  const role = headersList.get('x-user-role') || 'leitura'
 
-  const supabase = createAdminClient()
-  if (userId) {
-    await supabase.rpc('set_user_context', { p_user_id: userId, p_role: role })
-  }
+  const supabase = createAdminClient() as any
 
   const name = (formData.get('name') as string)?.trim()
   const phone = (formData.get('phone') as string)?.trim() || null
@@ -537,6 +527,7 @@ export async function quickCreateClient(formData: FormData) {
     return { error: error.message }
   }
 
+  invalidateCache(['locacoes', 'dashboard'])
   revalidatePath('/clientes')
   revalidatePath('/locacoes')
   return { success: true, client: data }
@@ -545,18 +536,13 @@ export async function quickCreateClient(formData: FormData) {
 export async function deleteRental(rentalId: string) {
   const headersList = await headers()
   const userId = headersList.get('x-user-id') || null
-  const role = headersList.get('x-user-role') || 'leitura'
 
-  const supabase = createAdminClient()
-  if (userId) {
-    await supabase.rpc('set_user_context', { p_user_id: userId, p_role: role })
-  }
+  const supabase = createAdminClient() as any
 
   try {
     await supabase.from('rentals').delete().eq('id', rentalId)
   } catch {}
 
-  // Também registra exclusão em audit_logs
   try {
     await supabase.from('audit_logs').insert({
       action: 'rental_deleted',
@@ -566,6 +552,7 @@ export async function deleteRental(rentalId: string) {
     })
   } catch {}
 
+  invalidateCache(['locacoes', 'financeiro', 'dashboard'])
   revalidatePath('/locacoes')
   revalidatePath('/')
   return { success: true }

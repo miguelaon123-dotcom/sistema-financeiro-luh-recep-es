@@ -26,10 +26,16 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="pt-BR" className={`${inter.variable} h-full antialiased`}>
+    <html
+      lang="pt-BR"
+      className={`${inter.variable} h-full antialiased`}
+      suppressHydrationWarning
+    >
       {/* Script inline para evitar flash de tema errado ao recarregar */}
       <head>
-        <script dangerouslySetInnerHTML={{ __html: `
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
           (function() {
             try {
               var t = localStorage.getItem('luh-theme');
@@ -38,12 +44,12 @@ export default function RootLayout({
               }
             } catch(e) {}
           })();
-        `}} />
+        `,
+          }}
+        />
       </head>
-      <body className="min-h-full flex flex-col bg-background text-foreground">
-        <ThemeProvider>
-          {children}
-        </ThemeProvider>
+      <body className="min-h-full flex flex-col bg-background text-foreground" suppressHydrationWarning>
+        <ThemeProvider>{children}</ThemeProvider>
       </body>
     </html>
   );

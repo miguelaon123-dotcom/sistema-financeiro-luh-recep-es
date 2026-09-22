@@ -3,16 +3,13 @@
 import { createAdminClient } from '@/lib/supabase/server'
 import { headers } from 'next/headers'
 import { revalidatePath } from 'next/cache'
+import { invalidateCache } from '@/lib/data-cache'
 
 export async function createEmployee(formData: FormData) {
   const headersList = await headers()
   const userId = headersList.get('x-user-id') || null
-  const role = headersList.get('x-user-role') || 'leitura'
 
   const supabase = createAdminClient()
-  if (userId) {
-    await supabase.rpc('set_user_context', { p_user_id: userId, p_role: role })
-  }
 
   const name = (formData.get('name') as string)?.trim()
   const employeeRole = (formData.get('role') as string)?.trim()
@@ -75,6 +72,7 @@ export async function createEmployee(formData: FormData) {
     console.error('Erro ao gravar log do funcionário:', e)
   }
 
+  invalidateCache(['funcionarios', 'eventos', 'dashboard'])
   revalidatePath('/funcionarios')
   revalidatePath('/eventos')
   return { success: true, id: employeeId }
@@ -83,12 +81,8 @@ export async function createEmployee(formData: FormData) {
 export async function updateEmployee(formData: FormData) {
   const headersList = await headers()
   const userId = headersList.get('x-user-id') || null
-  const role = headersList.get('x-user-role') || 'leitura'
 
   const supabase = createAdminClient()
-  if (userId) {
-    await supabase.rpc('set_user_context', { p_user_id: userId, p_role: role })
-  }
 
   const id = formData.get('id') as string
   const name = (formData.get('name') as string)?.trim()
@@ -140,6 +134,7 @@ export async function updateEmployee(formData: FormData) {
     })
   } catch {}
 
+  invalidateCache(['funcionarios', 'eventos', 'dashboard'])
   revalidatePath('/funcionarios')
   revalidatePath('/eventos')
   return { success: true }
@@ -148,12 +143,8 @@ export async function updateEmployee(formData: FormData) {
 export async function toggleEmployeeActive(id: string, newActiveState: boolean) {
   const headersList = await headers()
   const userId = headersList.get('x-user-id') || null
-  const role = headersList.get('x-user-role') || 'leitura'
 
   const supabase = createAdminClient()
-  if (userId) {
-    await supabase.rpc('set_user_context', { p_user_id: userId, p_role: role })
-  }
 
   try {
     await supabase.from('employees').update({ active: newActiveState }).eq('id', id)
@@ -169,6 +160,7 @@ export async function toggleEmployeeActive(id: string, newActiveState: boolean) 
     })
   } catch {}
 
+  invalidateCache(['funcionarios', 'eventos', 'dashboard'])
   revalidatePath('/funcionarios')
   revalidatePath('/eventos')
   return { success: true }
@@ -177,12 +169,8 @@ export async function toggleEmployeeActive(id: string, newActiveState: boolean) 
 export async function deleteEmployee(id: string) {
   const headersList = await headers()
   const userId = headersList.get('x-user-id') || null
-  const role = headersList.get('x-user-role') || 'leitura'
 
   const supabase = createAdminClient()
-  if (userId) {
-    await supabase.rpc('set_user_context', { p_user_id: userId, p_role: role })
-  }
 
   try {
     await supabase.from('employees').delete().eq('id', id)
@@ -197,6 +185,7 @@ export async function deleteEmployee(id: string) {
     })
   } catch {}
 
+  invalidateCache(['funcionarios', 'eventos', 'dashboard'])
   revalidatePath('/funcionarios')
   revalidatePath('/eventos')
   return { success: true }
@@ -205,12 +194,8 @@ export async function deleteEmployee(id: string) {
 export async function createEmployeeRole(formData: FormData) {
   const headersList = await headers()
   const userId = headersList.get('x-user-id') || null
-  const role = headersList.get('x-user-role') || 'leitura'
 
   const supabase = createAdminClient()
-  if (userId) {
-    await supabase.rpc('set_user_context', { p_user_id: userId, p_role: role })
-  }
 
   const name = (formData.get('name') as string)?.trim()
   const default_daily_rate = Number(formData.get('default_daily_rate')) || 150
@@ -238,7 +223,6 @@ export async function createEmployeeRole(formData: FormData) {
     }
   }
 
-  // Grava redundância em audit_logs para fallback imediato
   try {
     await supabase.from('audit_logs').insert({
       action: 'employee_role_created',
@@ -257,6 +241,7 @@ export async function createEmployeeRole(formData: FormData) {
     console.error('Erro ao gravar log da função:', e)
   }
 
+  invalidateCache(['funcionarios', 'eventos', 'dashboard'])
   revalidatePath('/funcionarios')
   revalidatePath('/eventos')
   return { success: true, id: roleId }
@@ -265,12 +250,8 @@ export async function createEmployeeRole(formData: FormData) {
 export async function updateEmployeeRole(formData: FormData) {
   const headersList = await headers()
   const userId = headersList.get('x-user-id') || null
-  const role = headersList.get('x-user-role') || 'leitura'
 
   const supabase = createAdminClient()
-  if (userId) {
-    await supabase.rpc('set_user_context', { p_user_id: userId, p_role: role })
-  }
 
   const id = formData.get('id') as string
   const name = (formData.get('name') as string)?.trim()
@@ -307,6 +288,7 @@ export async function updateEmployeeRole(formData: FormData) {
     })
   } catch {}
 
+  invalidateCache(['funcionarios', 'eventos', 'dashboard'])
   revalidatePath('/funcionarios')
   revalidatePath('/eventos')
   return { success: true }
@@ -315,12 +297,8 @@ export async function updateEmployeeRole(formData: FormData) {
 export async function deleteEmployeeRole(id: string) {
   const headersList = await headers()
   const userId = headersList.get('x-user-id') || null
-  const role = headersList.get('x-user-role') || 'leitura'
 
   const supabase = createAdminClient()
-  if (userId) {
-    await supabase.rpc('set_user_context', { p_user_id: userId, p_role: role })
-  }
 
   try {
     await supabase.from('employee_roles').delete().eq('id', id)
@@ -335,6 +313,7 @@ export async function deleteEmployeeRole(id: string) {
     })
   } catch {}
 
+  invalidateCache(['funcionarios', 'eventos', 'dashboard'])
   revalidatePath('/funcionarios')
   revalidatePath('/eventos')
   return { success: true }
@@ -345,12 +324,8 @@ export async function payStaffDailyRate(
 ): Promise<{ success?: boolean; error?: string }> {
   const headersList = await headers()
   const userId = headersList.get('x-user-id') || null
-  const role = headersList.get('x-user-role') || 'leitura'
 
   const supabase = createAdminClient()
-  if (userId) {
-    await supabase.rpc('set_user_context', { p_user_id: userId, p_role: role })
-  }
 
   const now = new Date().toISOString()
 
@@ -394,7 +369,7 @@ export async function payStaffDailyRate(
     try {
       const empName = assignmentData.employees?.name || 'Colaborador'
       const eventTitle = assignmentData.events?.title || 'Festa'
-      await supabase.from('financial_transactions').insert({
+      const txPayload: any = {
         event_id: assignmentData.event_id,
         type: 'expense',
         amount: Number(assignmentData.daily_rate) || 0,
@@ -402,13 +377,19 @@ export async function payStaffDailyRate(
         due_date: assignmentData.events?.event_date || now.split('T')[0],
         status: 'paid',
         paid_date: now.split('T')[0],
-        created_by: userId,
-      })
+        created_by: userId || null,
+      }
+      let txRes = await supabase.from('financial_transactions').insert(txPayload)
+      if (txRes.error && (txRes.error.code === 'PGRST204' || txRes.error.message?.includes('created_by'))) {
+        delete txPayload.created_by
+        await supabase.from('financial_transactions').insert(txPayload)
+      }
     } catch (err) {
       console.warn('Aviso ao lançar pagamento no financeiro:', err)
     }
   }
 
+  invalidateCache(['funcionarios', 'eventos', 'financeiro', 'dashboard'])
   revalidatePath('/funcionarios')
   revalidatePath('/eventos')
   revalidatePath('/financeiro')
@@ -421,12 +402,8 @@ export async function payAllEmployeeDailyRates(
 ): Promise<{ success?: boolean; error?: string }> {
   const headersList = await headers()
   const userId = headersList.get('x-user-id') || null
-  const role = headersList.get('x-user-role') || 'leitura'
 
   const supabase = createAdminClient()
-  if (userId) {
-    await supabase.rpc('set_user_context', { p_user_id: userId, p_role: role })
-  }
 
   const now = new Date().toISOString()
 
@@ -475,20 +452,26 @@ export async function payAllEmployeeDailyRates(
   const totalAmount = pendingAssignments.reduce((acc, a) => acc + Number(a.daily_rate || 0), 0)
   if (totalAmount > 0 && employee) {
     try {
-      await supabase.from('financial_transactions').insert({
+      const txPayload: any = {
         type: 'expense',
         amount: totalAmount,
         description: `Quitação de Diárias: ${employee.name} (${pendingAssignments.length} festas)`,
         due_date: now.split('T')[0],
         status: 'paid',
         paid_date: now.split('T')[0],
-        created_by: userId,
-      })
+        created_by: userId || null,
+      }
+      let txRes = await supabase.from('financial_transactions').insert(txPayload)
+      if (txRes.error && (txRes.error.code === 'PGRST204' || txRes.error.message?.includes('created_by'))) {
+        delete txPayload.created_by
+        await supabase.from('financial_transactions').insert(txPayload)
+      }
     } catch (err) {
       console.warn('Aviso ao lançar quitação no financeiro:', err)
     }
   }
 
+  invalidateCache(['funcionarios', 'eventos', 'financeiro', 'dashboard'])
   revalidatePath('/funcionarios')
   revalidatePath('/eventos')
   revalidatePath('/financeiro')
@@ -501,12 +484,8 @@ export async function revertStaffDailyPayment(
 ): Promise<{ success?: boolean; error?: string }> {
   const headersList = await headers()
   const userId = headersList.get('x-user-id') || null
-  const role = headersList.get('x-user-role') || 'leitura'
 
   const supabase = createAdminClient()
-  if (userId) {
-    await supabase.rpc('set_user_context', { p_user_id: userId, p_role: role })
-  }
 
   try {
     await supabase
@@ -528,6 +507,7 @@ export async function revertStaffDailyPayment(
     })
   } catch {}
 
+  invalidateCache(['funcionarios', 'eventos', 'financeiro', 'dashboard'])
   revalidatePath('/funcionarios')
   revalidatePath('/eventos')
   revalidatePath('/financeiro')

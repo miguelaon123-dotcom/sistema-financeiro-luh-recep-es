@@ -65,20 +65,24 @@ CREATE INDEX IF NOT EXISTS idx_contacts_name ON public.contacts(name);
 -- 5. TABELA DE EVENTOS
 -- ================================================
 CREATE TABLE IF NOT EXISTS public.events (
-  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  client_id   UUID REFERENCES public.contacts(id) ON DELETE SET NULL,
-  title       TEXT NOT NULL,
-  event_date  DATE NOT NULL,
-  location    TEXT,
-  budget      DECIMAL(12,2) DEFAULT 0.00,
-  status      TEXT CHECK (status IN ('budget', 'approved', 'completed', 'canceled')) DEFAULT 'budget',
-  created_by  UUID REFERENCES public.users(id) ON DELETE SET NULL,
-  created_at  TIMESTAMPTZ DEFAULT NOW(),
-  updated_at  TIMESTAMPTZ DEFAULT NOW()
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id         UUID REFERENCES public.contacts(id) ON DELETE SET NULL,
+  title             TEXT NOT NULL,
+  event_date        DATE NOT NULL,
+  location          TEXT,
+  budget            DECIMAL(12,2) DEFAULT 0.00,
+  deposit_amount    DECIMAL(12,2) DEFAULT 0.00,
+  deposit_status    TEXT CHECK (deposit_status IN ('pending', 'paid')) DEFAULT 'pending',
+  deposit_paid_date DATE,
+  status            TEXT CHECK (status IN ('budget', 'approved', 'completed', 'canceled')) DEFAULT 'budget',
+  created_by        UUID REFERENCES public.users(id) ON DELETE SET NULL,
+  created_at        TIMESTAMPTZ DEFAULT NOW(),
+  updated_at        TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_events_date ON public.events(event_date);
 CREATE INDEX IF NOT EXISTS idx_events_status ON public.events(status);
+CREATE INDEX IF NOT EXISTS idx_events_deposit_status ON public.events(deposit_status);
 
 -- ================================================
 -- 6. CONTAS BANCÁRIAS

@@ -1,8 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import Image from 'next/image'
 import {
   LayoutDashboard,
@@ -10,7 +10,7 @@ import {
   Package,
   CalendarDays,
   ClipboardList,
-  Users,
+  Truck,
   UserCheck,
   Settings,
   ChevronLeft,
@@ -24,14 +24,24 @@ const navigation = [
   { name: 'Estoque', href: '/estoque', icon: Package },
   { name: 'Locações', href: '/locacoes', icon: ClipboardList },
   { name: 'Eventos', href: '/eventos', icon: CalendarDays },
+  { name: 'Fornecedores', href: '/fornecedores', icon: Truck },
   { name: 'Funcionários', href: '/funcionarios', icon: UserCheck },
-  { name: 'Clientes', href: '/clientes', icon: Users },
   { name: 'Configurações', href: '/configuracoes', icon: Settings },
 ]
 
 export function Sidebar() {
   const [collapsed, setCollapsed] = useState(false)
   const pathname = usePathname()
+  const router = useRouter()
+
+  // Pré-carrega ativamente todas as rotas no navegador na montagem inicial
+  useEffect(() => {
+    navigation.forEach((item) => {
+      try {
+        router.prefetch(item.href)
+      } catch {}
+    })
+  }, [router])
 
   return (
     <aside
@@ -66,7 +76,7 @@ export function Sidebar() {
         )}
         <button
           onClick={() => setCollapsed(!collapsed)}
-          className="rounded-lg p-1.5 text-[#86868b] hover:bg-[#f5f5f7] hover:text-[#1d1d1f] transition-colors flex-shrink-0"
+          className="rounded-lg p-1.5 text-[#86868b] hover:bg-[#f5f5f7] hover:text-[#1d1d1f] transition-colors flex-shrink-0 cursor-pointer"
         >
           {collapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
         </button>
@@ -79,9 +89,20 @@ export function Sidebar() {
             <Link
               key={item.name}
               href={item.href}
-              className={`group flex items-center rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-150 ${
+              prefetch={true}
+              onMouseEnter={() => {
+                try {
+                  router.prefetch(item.href)
+                } catch {}
+              }}
+              onMouseDown={() => {
+                try {
+                  router.prefetch(item.href)
+                } catch {}
+              }}
+              className={`group flex items-center rounded-xl px-3 py-2.5 text-sm font-medium transition-colors ${
                 isActive
-                  ? 'bg-[#f5f5f7] text-[#1d1d1f] shadow-none'
+                  ? 'bg-[#f5f5f7] text-[#1d1d1f] font-semibold'
                   : 'text-[#6e6e73] hover:bg-[#f5f5f7]/80 hover:text-[#1d1d1f]'
               }`}
               title={collapsed ? item.name : undefined}

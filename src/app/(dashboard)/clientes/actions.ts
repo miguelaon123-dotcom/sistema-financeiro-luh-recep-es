@@ -3,16 +3,13 @@
 import { createAdminClient } from '@/lib/supabase/server'
 import { headers } from 'next/headers'
 import { revalidatePath } from 'next/cache'
+import { invalidateCache } from '@/lib/data-cache'
 
 export async function createContact(formData: FormData) {
   const headersList = await headers()
   const userId = headersList.get('x-user-id') || null
-  const role = headersList.get('x-user-role') || 'leitura'
 
   const supabase = createAdminClient()
-  if (userId) {
-    await supabase.rpc('set_user_context', { p_user_id: userId, p_role: role })
-  }
 
   const name = (formData.get('name') as string)?.trim()
   const type = (formData.get('type') as string) || 'client'
@@ -58,19 +55,13 @@ export async function createContact(formData: FormData) {
     return { error: error.message }
   }
 
+  invalidateCache()
   revalidatePath('/clientes')
   return { success: true }
 }
 
 export async function deleteContact(id: string) {
-  const headersList = await headers()
-  const userId = headersList.get('x-user-id') || null
-  const role = headersList.get('x-user-role') || 'leitura'
-
   const supabase = createAdminClient()
-  if (userId) {
-    await supabase.rpc('set_user_context', { p_user_id: userId, p_role: role })
-  }
 
   const { error } = await supabase.from('contacts').delete().eq('id', id)
   if (error) {
@@ -78,19 +69,13 @@ export async function deleteContact(id: string) {
     return { error: error.message }
   }
 
+  invalidateCache()
   revalidatePath('/clientes')
   return { success: true }
 }
 
 export async function updateContact(formData: FormData) {
-  const headersList = await headers()
-  const userId = headersList.get('x-user-id') || null
-  const role = headersList.get('x-user-role') || 'leitura'
-
   const supabase = createAdminClient()
-  if (userId) {
-    await supabase.rpc('set_user_context', { p_user_id: userId, p_role: role })
-  }
 
   const id = formData.get('id') as string
   const name = (formData.get('name') as string)?.trim()
@@ -123,6 +108,7 @@ export async function updateContact(formData: FormData) {
     return { error: error.message }
   }
 
+  invalidateCache()
   revalidatePath('/clientes')
   return { success: true }
 }

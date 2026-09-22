@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { Bell, Search, Plus, ArrowUpCircle, ArrowDownCircle, PackagePlus, CalendarPlus, UserPlus, Maximize2, Minimize2, Moon, Sun } from 'lucide-react'
+import { Bell, Search, Plus, ArrowUpCircle, ArrowDownCircle, PackagePlus, CalendarPlus, Maximize2, Minimize2, Moon, Sun } from 'lucide-react'
 import { useTheme } from '@/components/ThemeProvider'
 import Link from 'next/link'
 
@@ -118,14 +118,6 @@ export function Header({ email, name, role }: { email: string; name: string; rol
               >
                 <CalendarPlus size={16} className="text-[#0071e3]" />
                 <span>Novo Evento / Recepção</span>
-              </Link>
-              <Link
-                href="/clientes?action=novo-cliente"
-                onClick={() => setQuickOpen(false)}
-                className="flex items-center gap-2.5 rounded-xl px-3 py-2 text-xs font-medium text-[#1d1d1f] hover:bg-[#f5f5f7] transition-colors"
-              >
-                <UserPlus size={16} className="text-[#86868b]" />
-                <span>Novo Cliente / Contato</span>
               </Link>
             </div>
           )}

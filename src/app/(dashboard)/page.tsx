@@ -16,24 +16,40 @@ import {
 import { getCaixinhas } from './caixinhas/actions'
 import { CaixinhasFinanceiras } from '@/components/CaixinhasFinanceiras'
 
+import { getCachedData } from '@/lib/data-cache'
+
 export default async function DashboardPage() {
-  const headersList = await headers()
-  const userId = headersList.get('x-user-id') || ''
-  const role = headersList.get('x-user-role') || 'leitura'
-
   const supabase = createAdminClient()
-  if (userId) {
-    await supabase.rpc('set_user_context', { p_user_id: userId, p_role: role })
-  }
 
-  // 1. Buscar todas as transações financeiras
-  const { data: txsData } = await supabase
-    .from('financial_transactions')
-    .select(`
-      id, amount, type, status, description, due_date, paid_date,
-      events(id, title), contacts(id, name)
-    `)
-    .order('due_date', { ascending: false })
+  // 1. Buscar transações, eventos, produtos e caixinhas com cache ultra-rápido em memória
+  const { txsData, allEvents, allProducts, caixinhas } = await getCachedData(
+    'dashboard_data',
+    async () => {
+      const [txsRes, eventsRes, prodsRes, cx] = await Promise.all([
+        supabase
+          .from('financial_transactions')
+          .select(`
+            id, amount, type, status, description, due_date, paid_date,
+            events(id, title), contacts(id, name)
+          `)
+          .order('due_date', { ascending: false }),
+        supabase
+          .from('events')
+          .select('id, title, event_date, status, budget, deposit_amount, deposit_status, contacts(name)')
+          .order('event_date', { ascending: true }),
+        supabase
+          .from('products')
+          .select('id, name, current_stock, min_stock'),
+        getCaixinhas(),
+      ])
+      return {
+        txsData: txsRes.data,
+        allEvents: eventsRes.data,
+        allProducts: prodsRes.data,
+        caixinhas: cx,
+      }
+    }
+  )
 
   const transactions = (txsData as any[]) || []
 
@@ -98,28 +114,17 @@ export default async function DashboardPage() {
     .sort((a, b) => (a.due_date > b.due_date ? 1 : -1))
     .slice(0, 5)
 
-  // 2. Buscar eventos
-  const { data: allEvents } = await supabase
-    .from('events')
-    .select('id, title, event_date, status, budget, contacts(name)')
-    .order('event_date', { ascending: true })
-
+  // 2. Processar eventos
   const events = (allEvents as any[]) || []
   const todayStr = new Date().toISOString().split('T')[0]
   const upcomingEvents = events.filter((e) => e.event_date >= todayStr)
 
-  // 3. Buscar produtos para monitorar estoque baixo
-  const { data: allProducts } = await supabase
-    .from('products')
-    .select('id, name, current_stock, min_stock')
-
-  const lowStock = (allProducts || []).filter(
-    (p) => Number(p.current_stock) <= Number(p.min_stock)
+  // 3. Monitorar estoque baixo
+  const lowStock = ((allProducts as any[]) || []).filter(
+    (p: any) => Number(p.current_stock) <= Number(p.min_stock)
   )
 
-  // 4. Buscar Caixinhas Financeiras
-  const caixinhas = await getCaixinhas()
-
+  // 4. Caixinhas Financeiras
   const totalInCaixinhas = (caixinhas || []).reduce(
     (acc, c) => acc + Number(c.current_balance || 0),
     0
@@ -378,9 +383,22 @@ export default async function DashboardPage() {
                         Data: {new Date(ev.event_date + 'T12:00:00Z').toLocaleDateString('pt-BR')}
                       </span>
                     </div>
-                    <span className="inline-flex items-center rounded-lg bg-[#ebf4fe] px-2 py-0.5 text-xs font-medium text-[#0071e3] capitalize">
-                      {ev.status || 'Agendado'}
-                    </span>
+                    <div className="flex flex-col items-end gap-1 shrink-0">
+                      <span className="inline-flex items-center rounded-lg bg-[#ebf4fe] px-2 py-0.5 text-xs font-medium text-[#0071e3] capitalize">
+                        {ev.status || 'Agendado'}
+                      </span>
+                      {Number(ev.deposit_amount || 0) > 0 && (
+                        <span
+                          className={`inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-semibold ${
+                            ev.deposit_status === 'paid'
+                              ? 'bg-[#e8f8ee] text-[#1a7f37]'
+                              : 'bg-[#fff8e6] text-[#b8860b]'
+                          }`}
+                        >
+                          Sinal: {ev.deposit_status === 'paid' ? 'Pago' : 'Pendente'}
+                        </span>
+                      )}
+                    </div>
                   </Link>
                 ))}
               </div>
