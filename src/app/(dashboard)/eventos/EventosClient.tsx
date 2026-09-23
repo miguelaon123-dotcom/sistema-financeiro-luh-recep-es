@@ -140,6 +140,7 @@ export function EventosClient({
 
   const [searchTerm, setSearchTerm] = useState('')
   const [filterStatus, setFilterStatus] = useState<string>('all')
+  const [selectedDateFilter, setSelectedDateFilter] = useState<string>('')
   const [isModalOpen, setIsModalOpen] = useState(initialOpenModal)
   const [editingEvent, setEditingEvent] = useState<EventItem | null>(null)
   const [modalBudget, setModalBudget] = useState<string>('')
@@ -258,7 +259,18 @@ export function EventosClient({
     return null
   }
 
-  // Filtragem de Eventos
+  // Dias úteis para atalhos rápidos
+  const todayStr = new Date().toISOString().split('T')[0]
+  const tomorrowObj = new Date()
+  tomorrowObj.setDate(tomorrowObj.getDate() + 1)
+  const tomorrowStr = tomorrowObj.toISOString().split('T')[0]
+
+  // Contagem de eventos no dia selecionado
+  const eventsOnSelectedDate = selectedDateFilter
+    ? localEvents.filter((evt) => evt.event_date === selectedDateFilter)
+    : []
+
+  // Filtragem de Eventos (por busca, status e data específica)
   const filteredEvents = localEvents.filter((evt) => {
     const matchesSearch =
       evt.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -266,7 +278,9 @@ export function EventosClient({
       (evt.location && evt.location.toLowerCase().includes(searchTerm.toLowerCase()))
 
     const matchesStatus = filterStatus === 'all' || evt.status === filterStatus
-    return matchesSearch && matchesStatus
+    const matchesDate = !selectedDateFilter || evt.event_date === selectedDateFilter
+
+    return matchesSearch && matchesStatus && matchesDate
   })
 
   // Submit Evento Novo / Editar
@@ -684,6 +698,105 @@ Por favor, confirmem presença com antecedência! ✅`
           </div>
         </div>
 
+        {/* Barra de Filtro de Datas e Dias */}
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-6 p-3.5 rounded-2xl bg-[#fbfbfd] border border-[#e5e5ea]">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs font-semibold text-[#1d1d1f] flex items-center gap-1.5 mr-1">
+              <Calendar className="h-3.5 w-3.5 text-[#b8860b]" />
+              Filtrar por Dia:
+            </span>
+
+            <input
+              type="date"
+              value={selectedDateFilter}
+              onChange={(e) => setSelectedDateFilter(e.target.value)}
+              className="rounded-xl border border-[#d1d1d6] bg-white px-3 py-1.5 text-xs text-[#1d1d1f] font-medium focus:border-[#1d1d1f] focus:outline-none transition-all cursor-pointer"
+              title="Selecione uma data para verificar quantos eventos existem neste dia"
+            />
+
+            <button
+              type="button"
+              onClick={() => setSelectedDateFilter(todayStr)}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-xl border transition-all cursor-pointer ${
+                selectedDateFilter === todayStr
+                  ? 'bg-[#1d1d1f] text-white border-[#1d1d1f] shadow-xs'
+                  : 'bg-white text-[#6e6e73] border-[#d1d1d6] hover:text-[#1d1d1f] hover:bg-[#f5f5f7]'
+              }`}
+            >
+              Hoje
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setSelectedDateFilter(tomorrowStr)}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-xl border transition-all cursor-pointer ${
+                selectedDateFilter === tomorrowStr
+                  ? 'bg-[#1d1d1f] text-white border-[#1d1d1f] shadow-xs'
+                  : 'bg-white text-[#6e6e73] border-[#d1d1d6] hover:text-[#1d1d1f] hover:bg-[#f5f5f7]'
+              }`}
+            >
+              Amanhã
+            </button>
+
+            {selectedDateFilter && (
+              <button
+                type="button"
+                onClick={() => setSelectedDateFilter('')}
+                className="px-3 py-1.5 text-xs font-semibold rounded-xl bg-[#feeceb] text-[#cf222e] hover:bg-[#fdd8d5] transition-all cursor-pointer flex items-center gap-1"
+                title="Limpar filtro e ver todos os dias"
+              >
+                <X size={13} />
+                <span>Ver todos os dias</span>
+              </button>
+            )}
+          </div>
+
+          {/* Contador / Indicador de Eventos naquele Dia */}
+          {selectedDateFilter ? (
+            <div className="flex items-center gap-2">
+              <span className={`text-xs font-semibold px-3 py-1.5 rounded-xl border flex items-center gap-1.5 ${
+                eventsOnSelectedDate.length > 0
+                  ? 'bg-[#e8f8ee] border-[#1a7f37]/30 text-[#1a7f37]'
+                  : 'bg-[#fff8e6] border-[#b8860b]/30 text-[#b8860b]'
+              }`}>
+                <span className={`w-2 h-2 rounded-full ${eventsOnSelectedDate.length > 0 ? 'bg-[#1a7f37]' : 'bg-[#b8860b]'}`}></span>
+                <strong>{eventsOnSelectedDate.length}</strong> {eventsOnSelectedDate.length === 1 ? 'evento em' : 'eventos em'}{' '}
+                {new Date(selectedDateFilter + 'T00:00:00').toLocaleDateString('pt-BR')}
+              </span>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const d = new Date(selectedDateFilter + 'T00:00:00')
+                    d.setDate(d.getDate() - 1)
+                    setSelectedDateFilter(d.toISOString().split('T')[0])
+                  }}
+                  className="px-2.5 py-1 text-xs font-medium rounded-lg border border-[#d1d1d6] bg-white text-[#6e6e73] hover:text-[#1d1d1f] hover:bg-[#f5f5f7] cursor-pointer"
+                  title="Ver dia anterior"
+                >
+                  ◀ Anterior
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const d = new Date(selectedDateFilter + 'T00:00:00')
+                    d.setDate(d.getDate() + 1)
+                    setSelectedDateFilter(d.toISOString().split('T')[0])
+                  }}
+                  className="px-2.5 py-1 text-xs font-medium rounded-lg border border-[#d1d1d6] bg-white text-[#6e6e73] hover:text-[#1d1d1f] hover:bg-[#f5f5f7] cursor-pointer"
+                  title="Ver próximo dia"
+                >
+                  Próximo ▶
+                </button>
+              </div>
+            </div>
+          ) : (
+            <span className="text-xs text-[#86868b]">
+              Exibindo todos os <strong>{localEvents.length}</strong> eventos cadastrados
+            </span>
+          )}
+        </div>
+
         {/* Grid de Cards de Eventos */}
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
           {filteredEvents.length > 0 ? (
@@ -728,10 +841,20 @@ Por favor, confirmem presença com antecedência! ✅`
                     </div>
 
                     <div className="space-y-2 text-xs text-[#6e6e73]">
-                      <p className="flex items-center gap-2">
-                        <Calendar className="h-3.5 w-3.5 text-[#86868b]" />
+                      <button
+                        type="button"
+                        onClick={() => setSelectedDateFilter(evt.event_date)}
+                        className="flex items-center gap-2 text-left hover:text-[#1d1d1f] hover:underline cursor-pointer transition-colors group/date"
+                        title="Clique para filtrar apenas os eventos deste dia"
+                      >
+                        <Calendar className="h-3.5 w-3.5 text-[#86868b] group-hover/date:text-[#b8860b]" />
                         <span>{new Date(evt.event_date + 'T00:00:00').toLocaleDateString('pt-BR')}</span>
-                      </p>
+                        {selectedDateFilter === evt.event_date && (
+                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-[#1d1d1f] text-white">
+                            Filtro ativo
+                          </span>
+                        )}
+                      </button>
                       {Number(evt.guest_count || 0) > 0 && (
                         <p className="flex items-center gap-2 font-medium text-[#334155]">
                           <Users className="h-3.5 w-3.5 text-[#64748b]" />
@@ -1071,17 +1194,36 @@ Por favor, confirmem presença com antecedência! ✅`
             })
           ) : (
             <div className="col-span-full py-12 text-center border border-dashed border-[#e5e5ea] rounded-2xl bg-[#fafafa]">
-              <CalendarPlus className="mx-auto h-8 w-8 text-[#86868b] mb-2 stroke-[1.5]" />
-              <p className="text-[#1d1d1f] font-medium text-sm">Nenhum evento encontrado</p>
-              <p className="text-xs text-[#86868b] mt-0.5">
-                Cadastre orçamentos e datas para acompanhar o cronograma.
+              <Calendar className="mx-auto h-8 w-8 text-[#86868b] mb-2 stroke-[1.5]" />
+              <p className="text-[#1d1d1f] font-medium text-sm">
+                {selectedDateFilter
+                  ? `Nenhum evento agendado para ${new Date(selectedDateFilter + 'T00:00:00').toLocaleDateString('pt-BR')}`
+                  : 'Nenhum evento encontrado'}
               </p>
-              <button
-                onClick={() => setIsModalOpen(true)}
-                className="mt-3 text-xs font-semibold text-[#1d1d1f] hover:underline cursor-pointer"
-              >
-                + Cadastrar novo evento
-              </button>
+              <p className="text-xs text-[#86868b] mt-0.5">
+                {selectedDateFilter
+                  ? 'Esta data está totalmente livre na sua agenda!'
+                  : 'Cadastre orçamentos e datas para acompanhar o cronograma.'}
+              </p>
+              <div className="flex items-center justify-center gap-3 mt-3">
+                {selectedDateFilter && (
+                  <button
+                    onClick={() => setSelectedDateFilter('')}
+                    className="text-xs font-semibold text-[#0071e3] hover:underline cursor-pointer"
+                  >
+                    Ver todos os eventos
+                  </button>
+                )}
+                <button
+                  onClick={() => {
+                    setEditingEvent(null)
+                    setIsModalOpen(true)
+                  }}
+                  className="text-xs font-semibold text-[#1d1d1f] hover:underline cursor-pointer"
+                >
+                  + Cadastrar novo evento
+                </button>
+              </div>
             </div>
           )}
         </div>
@@ -1733,7 +1875,7 @@ Por favor, confirmem presença com antecedência! ✅`
                     type="date"
                     name="event_date"
                     required
-                    defaultValue={editingEvent?.event_date || ''}
+                    defaultValue={editingEvent?.event_date || selectedDateFilter || ''}
                     className="w-full rounded-xl border border-[#d1d1d6] bg-white px-3.5 py-2 text-sm text-[#1d1d1f] focus:border-[#1d1d1f] focus:outline-none focus:ring-1 focus:ring-[#1d1d1f] transition-all"
                   />
                 </div>
