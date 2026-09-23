@@ -9,6 +9,8 @@ interface SyncFinancialParams {
   title: string
   client_id?: string | null
   event_date: string
+  payment_due_date?: string | null
+  guest_count?: number | null
   budget: number
   deposit_amount: number
   deposit_status: 'pending' | 'paid'
@@ -28,6 +30,7 @@ async function syncEventFinancialTransactions(
       title,
       client_id,
       event_date,
+      payment_due_date,
       budget,
       deposit_amount,
       deposit_status,
@@ -35,6 +38,8 @@ async function syncEventFinancialTransactions(
       status,
       userId,
     } = params
+
+    const finalDueDate = payment_due_date || event_date
 
     // 1. Buscar transações de receita já associadas ao evento
     const { data: existingTxs } = await supabase
@@ -107,7 +112,7 @@ async function syncEventFinancialTransactions(
             .update({
               amount: remainingAmount,
               description: `Saldo Restante - Evento: ${title}`,
-              due_date: event_date,
+              due_date: finalDueDate,
               contact_id: client_id || null,
               status: remainingTxStatus,
               paid_date: remainingPaidDate,
@@ -120,7 +125,7 @@ async function syncEventFinancialTransactions(
             type: 'income',
             amount: remainingAmount,
             description: `Saldo Restante - Evento: ${title}`,
-            due_date: event_date,
+            due_date: finalDueDate,
             status: remainingTxStatus,
             paid_date: remainingPaidDate,
             created_by: userId || null,
@@ -147,7 +152,7 @@ async function syncEventFinancialTransactions(
           .update({
             amount: budget,
             description: `Contrato Evento: ${title}`,
-            due_date: event_date,
+            due_date: finalDueDate,
             contact_id: client_id || null,
             status: mainTxStatus,
             paid_date: mainPaidDate,
@@ -165,7 +170,7 @@ async function syncEventFinancialTransactions(
           type: 'income',
           amount: budget,
           description: `Contrato Evento: ${title}`,
-          due_date: event_date,
+          due_date: finalDueDate,
           status: mainTxStatus,
           paid_date: mainPaidDate,
           created_by: userId || null,
@@ -201,6 +206,8 @@ export async function createEvent(formData: FormData) {
   const budget = Number(formData.get('budget')) || 0
   const deposit_amount = Math.max(0, Number(formData.get('deposit_amount')) || 0)
   const deposit_status = (formData.get('deposit_status') as 'pending' | 'paid') || 'pending'
+  const guest_count = Number(formData.get('guest_count')) || 0
+  const payment_due_date = (formData.get('payment_due_date') as string)?.trim() || null
   const status = (formData.get('status') as string) || 'budget'
   const today = new Date().toISOString().split('T')[0]
   const deposit_paid_date = deposit_status === 'paid' ? today : null
@@ -218,6 +225,8 @@ export async function createEvent(formData: FormData) {
     deposit_amount,
     deposit_status,
     deposit_paid_date,
+    guest_count,
+    payment_due_date,
     status,
   }
 
@@ -232,11 +241,13 @@ export async function createEvent(formData: FormData) {
     .maybeSingle()
 
   // Fallback se colunas novas ou created_by ainda não estiverem no schema cache
-  if (error && (error.code === 'PGRST204' || error.message?.includes('deposit_') || error.message?.includes('created_by'))) {
+  if (error && (error.code === 'PGRST204' || error.code === '42703' || error.message?.includes('deposit_') || error.message?.includes('created_by') || error.message?.includes('guest_count') || error.message?.includes('payment_due_date'))) {
     delete insertData.created_by
     delete insertData.deposit_amount
     delete insertData.deposit_status
     delete insertData.deposit_paid_date
+    delete insertData.guest_count
+    delete insertData.payment_due_date
 
     const retry = await supabase
       .from('events')
@@ -254,12 +265,31 @@ export async function createEvent(formData: FormData) {
 
   const newEventId = insertedEvent?.id
 
+  // Salvar metadados em audit_logs para persistência imediata
+  if (newEventId) {
+    try {
+      await supabase.from('audit_logs').insert({
+        action: 'event_metadata_updated',
+        table_name: 'events',
+        record_id: newEventId,
+        user_id: userId,
+        new_data: {
+          id: newEventId,
+          guest_count,
+          payment_due_date,
+        },
+      })
+    } catch {}
+  }
+
   // 💰 Conexão Automática com o Financeiro e Dashboard
   if (newEventId && (budget > 0 || deposit_amount > 0)) {
     await syncEventFinancialTransactions(supabase, newEventId, {
       title,
       client_id,
       event_date,
+      payment_due_date,
+      guest_count,
       budget,
       deposit_amount,
       deposit_status,
@@ -382,6 +412,8 @@ export async function updateEvent(formData: FormData) {
   const budget = Number(formData.get('budget')) || 0
   const deposit_amount = Math.max(0, Number(formData.get('deposit_amount')) || 0)
   const deposit_status = (formData.get('deposit_status') as 'pending' | 'paid') || 'pending'
+  const guest_count = Number(formData.get('guest_count')) || 0
+  const payment_due_date = (formData.get('payment_due_date') as string)?.trim() || null
   const status = (formData.get('status') as string) || 'budget'
   const today = new Date().toISOString().split('T')[0]
   const deposit_paid_date = deposit_status === 'paid' ? today : null
@@ -399,6 +431,8 @@ export async function updateEvent(formData: FormData) {
     deposit_amount,
     deposit_status,
     deposit_paid_date,
+    guest_count,
+    payment_due_date,
     status,
   }
 
@@ -407,10 +441,12 @@ export async function updateEvent(formData: FormData) {
     .update(updateData)
     .eq('id', id)
 
-  if (error && (error.code === 'PGRST204' || error.message?.includes('deposit_'))) {
+  if (error && (error.code === 'PGRST204' || error.code === '42703' || error.message?.includes('deposit_') || error.message?.includes('guest_count') || error.message?.includes('payment_due_date'))) {
     delete updateData.deposit_amount
     delete updateData.deposit_status
     delete updateData.deposit_paid_date
+    delete updateData.guest_count
+    delete updateData.payment_due_date
     const retry = await supabase.from('events').update(updateData).eq('id', id)
     error = retry.error
   }
@@ -420,11 +456,28 @@ export async function updateEvent(formData: FormData) {
     return { error: error.message }
   }
 
+  // Gravar metadados em audit_logs
+  try {
+    await supabase.from('audit_logs').insert({
+      action: 'event_metadata_updated',
+      table_name: 'events',
+      record_id: id,
+      user_id: userId,
+      new_data: {
+        id,
+        guest_count,
+        payment_due_date,
+      },
+    })
+  } catch {}
+
   // Sincronizar transações no Financeiro
   await syncEventFinancialTransactions(supabase, id, {
     title,
     client_id,
     event_date,
+    payment_due_date,
+    guest_count,
     budget,
     deposit_amount,
     deposit_status,

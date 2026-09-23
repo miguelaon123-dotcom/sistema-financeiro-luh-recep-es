@@ -29,6 +29,8 @@ import {
   Wallet,
   TrendingUp,
   Clock,
+  Users,
+  CalendarClock,
 } from 'lucide-react'
 import {
   createEvent,
@@ -65,6 +67,8 @@ interface EventItem {
   deposit_amount?: number | null
   deposit_status?: 'pending' | 'paid' | null
   deposit_paid_date?: string | null
+  guest_count?: number | null
+  payment_due_date?: string | null
   status: 'budget' | 'approved' | 'completed' | 'canceled'
   contacts?: { id: string; name: string } | null
   financial_transactions?: EventTransaction[]
@@ -141,6 +145,8 @@ export function EventosClient({
   const [modalBudget, setModalBudget] = useState<string>('')
   const [modalDepositAmount, setModalDepositAmount] = useState<string>('')
   const [modalDepositStatus, setModalDepositStatus] = useState<'pending' | 'paid'>('pending')
+  const [modalGuestCount, setModalGuestCount] = useState<string>('')
+  const [modalPaymentDueDate, setModalPaymentDueDate] = useState<string>('')
   const [isPending, startTransition] = useTransition()
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
@@ -151,10 +157,14 @@ export function EventosClient({
       setModalBudget(editingEvent.budget ? String(editingEvent.budget) : '')
       setModalDepositAmount(editingEvent.deposit_amount ? String(editingEvent.deposit_amount) : '')
       setModalDepositStatus(editingEvent.deposit_status === 'paid' ? 'paid' : 'pending')
+      setModalGuestCount(editingEvent.guest_count ? String(editingEvent.guest_count) : '')
+      setModalPaymentDueDate(editingEvent.payment_due_date ? String(editingEvent.payment_due_date) : '')
     } else {
       setModalBudget('')
       setModalDepositAmount('')
       setModalDepositStatus('pending')
+      setModalGuestCount('')
+      setModalPaymentDueDate('')
     }
   }, [editingEvent, isModalOpen])
 
@@ -722,10 +732,24 @@ Por favor, confirmem presença com antecedência! ✅`
                         <Calendar className="h-3.5 w-3.5 text-[#86868b]" />
                         <span>{new Date(evt.event_date + 'T00:00:00').toLocaleDateString('pt-BR')}</span>
                       </p>
+                      {Number(evt.guest_count || 0) > 0 && (
+                        <p className="flex items-center gap-2 font-medium text-[#334155]">
+                          <Users className="h-3.5 w-3.5 text-[#64748b]" />
+                          <span>{evt.guest_count} {evt.guest_count === 1 ? 'pessoa / convidado' : 'pessoas / convidados'}</span>
+                        </p>
+                      )}
                       <p className="flex items-center gap-2">
                         <MapPin className="h-3.5 w-3.5 text-[#86868b]" />
                         <span>{evt.location || 'Local a definir'}</span>
                       </p>
+                      {evt.payment_due_date && (
+                        <p className="flex items-center gap-2 font-medium text-[#b45309]">
+                          <CalendarClock className="h-3.5 w-3.5 text-[#b45309]" />
+                          <span>
+                            Vencimento Pagamento: {new Date(evt.payment_due_date + 'T00:00:00').toLocaleDateString('pt-BR')}
+                          </span>
+                        </p>
+                      )}
                       <p className="flex items-center gap-2 font-medium text-[#1d1d1f]">
                         <DollarSign className="h-3.5 w-3.5 text-[#b8860b]" />
                         <span>
@@ -846,9 +870,16 @@ Por favor, confirmem presença com antecedência! ✅`
                                       <span className="text-[10px] uppercase font-bold text-[#64748b] block tracking-wider">
                                         Saldo Restante (Total R$ {Number(evt.budget).toLocaleString('pt-BR', { minimumFractionDigits: 2 })})
                                       </span>
-                                      <span className="font-bold text-xs text-[#1d1d1f]">
-                                        R$ {Math.max(0, Number(evt.budget || 0) - Number(evt.deposit_amount || 0)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                                      </span>
+                                      <div className="flex items-center gap-2">
+                                        <span className="font-bold text-xs text-[#1d1d1f]">
+                                          R$ {Math.max(0, Number(evt.budget || 0) - Number(evt.deposit_amount || 0)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                        </span>
+                                        {evt.payment_due_date && (
+                                          <span className="text-[10px] text-[#b45309] font-medium">
+                                            • Vence: {new Date(evt.payment_due_date + 'T00:00:00').toLocaleDateString('pt-BR')}
+                                          </span>
+                                        )}
+                                      </div>
                                     </div>
                                   </div>
                                   <div className="flex items-center gap-1.5 shrink-0">
@@ -890,9 +921,16 @@ Por favor, confirmem presença com antecedência! ✅`
                               <div className="flex items-center justify-between text-xs bg-[#fdfcf7] border border-[#f3e8c8] p-2 rounded-xl text-[#78350f]">
                                 <div className="flex items-center gap-1.5 font-medium">
                                   <Wallet size={13} className="text-[#b45309]" />
-                                  <span>
-                                    Contrato: <strong>R$ {Number(evt.budget).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong>
-                                  </span>
+                                  <div>
+                                    <span>
+                                      Contrato: <strong>R$ {Number(evt.budget).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong>
+                                    </span>
+                                    {evt.payment_due_date && (
+                                      <span className="text-[10px] text-[#b45309] block">
+                                        Vencimento: {new Date(evt.payment_due_date + 'T00:00:00').toLocaleDateString('pt-BR')}
+                                      </span>
+                                    )}
+                                  </div>
                                 </div>
                                 <div className="flex items-center gap-1.5">
                                   <span
@@ -1710,6 +1748,38 @@ Por favor, confirmem presença com antecedência! ✅`
                     defaultValue={editingEvent?.location || ''}
                     placeholder="Ex: Luh Recepções - Salão Nobre"
                     className="w-full rounded-xl border border-[#d1d1d6] bg-white px-3.5 py-2 text-sm text-[#1d1d1f] placeholder-[#86868b] focus:border-[#1d1d1f] focus:outline-none focus:ring-1 focus:ring-[#1d1d1f] transition-all"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-[#1d1d1f] mb-1 flex items-center gap-1.5">
+                    <Users size={14} className="text-[#64748b]" />
+                    Quantidade de Pessoas / Convidados
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    name="guest_count"
+                    value={modalGuestCount}
+                    onChange={(e) => setModalGuestCount(e.target.value)}
+                    placeholder="Ex: 120 convidados"
+                    className="w-full rounded-xl border border-[#d1d1d6] bg-white px-3.5 py-2 text-sm text-[#1d1d1f] placeholder-[#86868b] focus:border-[#1d1d1f] focus:outline-none focus:ring-1 focus:ring-[#1d1d1f] transition-all"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-[#1d1d1f] mb-1 flex items-center gap-1.5">
+                    <CalendarClock size={14} className="text-[#b45309]" />
+                    Dia de Vencimento do Pagamento
+                  </label>
+                  <input
+                    type="date"
+                    name="payment_due_date"
+                    value={modalPaymentDueDate}
+                    onChange={(e) => setModalPaymentDueDate(e.target.value)}
+                    className="w-full rounded-xl border border-[#d1d1d6] bg-white px-3.5 py-2 text-sm text-[#1d1d1f] focus:border-[#1d1d1f] focus:outline-none focus:ring-1 focus:ring-[#1d1d1f] transition-all"
                   />
                 </div>
               </div>
