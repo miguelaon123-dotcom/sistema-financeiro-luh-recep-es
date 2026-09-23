@@ -333,11 +333,25 @@ export async function updateEventStatus(
 export async function deleteEvent(id: string) {
   const supabase = createAdminClient()
 
-  // Exclui transações financeiras associadas ao evento
+  // 1. Exclui transações financeiras associadas ao evento
   try {
     await supabase.from('financial_transactions').delete().eq('event_id', id)
   } catch (err) {
     console.warn('Aviso ao remover transações do evento:', err)
+  }
+
+  // 2. Exclui escalas e diárias de equipe associadas ao evento
+  try {
+    await supabase.from('event_staff').delete().eq('event_id', id)
+  } catch (err) {
+    console.warn('Aviso ao remover escalas do evento:', err)
+  }
+
+  // 3. Exclui itens associados ao evento
+  try {
+    await supabase.from('event_items').delete().eq('event_id', id)
+  } catch (err) {
+    console.warn('Aviso ao remover itens do evento:', err)
   }
 
   const { error } = await supabase.from('events').delete().eq('id', id)
@@ -346,9 +360,10 @@ export async function deleteEvent(id: string) {
     return { error: error.message }
   }
 
-  invalidateCache(['eventos', 'financeiro', 'dashboard'])
+  invalidateCache(['eventos', 'financeiro', 'funcionarios', 'dashboard'])
   revalidatePath('/eventos')
   revalidatePath('/financeiro')
+  revalidatePath('/funcionarios')
   revalidatePath('/')
   return { success: true }
 }
@@ -847,7 +862,7 @@ export async function updateEventDepositStatus(
 
   const { data: event, error: fetchErr } = await supabase
     .from('events')
-    .select('id, title, budget, deposit_amount, deposit_status, client_id, event_date, status')
+    .select('id, title, budget, client_id, event_date, status, financial_transactions(id, type, amount, status, due_date, paid_date, description)')
     .eq('id', eventId)
     .single()
 
@@ -855,23 +870,20 @@ export async function updateEventDepositStatus(
     return { error: 'Evento não encontrado.' }
   }
 
-  const deposit_amount = Number(event.deposit_amount) || 0
+  const sinalTx = (event.financial_transactions as any[])?.find((t: any) =>
+    t.description?.toLowerCase().includes('sinal')
+  )
+  const deposit_amount = Number(sinalTx?.amount || 0)
   const deposit_paid_date = newDepositStatus === 'paid' ? today : null
 
-  // 1. Atualizar tabela events
-  let updateData: Record<string, any> = {
-    deposit_status: newDepositStatus,
-    deposit_paid_date: deposit_paid_date,
-  }
-
-  let { error: updateEvtErr } = await supabase
-    .from('events')
-    .update(updateData)
-    .eq('id', eventId)
-
-  if (updateEvtErr && (updateEvtErr.code === 'PGRST204' || updateEvtErr.message?.includes('deposit_'))) {
-    console.warn('Aviso: colunas de sinal ainda não sincronizadas no banco events:', updateEvtErr.message)
-  }
+  // 1. Atualizar tabela events (se a coluna existir)
+  try {
+    const updateData: Record<string, any> = {
+      deposit_status: newDepositStatus,
+      deposit_paid_date: deposit_paid_date,
+    }
+    await supabase.from('events').update(updateData).eq('id', eventId)
+  } catch {}
 
   // 2. Sincronizar transações no financeiro (faz o sinal subir no Dashboard imediatamente ao marcar como Pago!)
   await syncEventFinancialTransactions(supabase, eventId, {
@@ -899,18 +911,18 @@ export async function receiveEventContractPayment(eventId: string) {
 
   const supabase = createAdminClient()
 
-  const { data: event } = await supabase
+  const { data: event, error: fetchErr } = await supabase
     .from('events')
-    .select('id, title, budget, deposit_amount, deposit_status, client_id, event_date, status')
+    .select('id, title, budget, client_id, event_date, status')
     .eq('id', eventId)
     .single()
 
-  if (!event) return { error: 'Evento não encontrado' }
+  if (fetchErr || !event) return { error: 'Evento não encontrado' }
 
   const today = new Date().toISOString().split('T')[0]
 
   // Marca todas as transações de receita deste evento como pagas
-  await supabase
+  const { error: txErr } = await supabase
     .from('financial_transactions')
     .update({
       status: 'paid',
@@ -919,7 +931,12 @@ export async function receiveEventContractPayment(eventId: string) {
     .eq('event_id', eventId)
     .eq('type', 'income')
 
-  // Se o sinal ou contrato do evento estavam pendentes, atualiza o evento
+  if (txErr) {
+    console.error('Erro ao atualizar transações financeiras:', txErr)
+    return { error: txErr.message }
+  }
+
+  // Tenta atualizar colunas opcionais na tabela events
   try {
     await supabase
       .from('events')

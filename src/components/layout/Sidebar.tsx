@@ -51,25 +51,25 @@ export function Sidebar() {
     >
       <div className="flex h-16 items-center justify-between px-4 border-b border-[#f2f2f7]">
         {!collapsed && (
-          <div className="flex items-center min-w-0 flex-1">
+          <div className="flex items-center min-w-0 flex-1 py-1">
             <Image
-              src="/logo-luh.jpg"
+              src="/logo-luh.png"
               alt="Luh Recepções"
-              width={120}
-              height={44}
-              className="object-contain w-auto h-9 max-w-[120px]"
+              width={180}
+              height={60}
+              className="object-contain w-auto h-13 max-w-[170px] transition-all"
               priority
             />
           </div>
         )}
         {collapsed && (
-          <div className="mx-auto flex items-center justify-center">
+          <div className="mx-auto flex items-center justify-center py-1">
             <Image
-              src="/logo-luh.jpg"
+              src="/logo-luh.png"
               alt="Luh"
-              width={32}
-              height={32}
-              className="object-contain w-8 h-8 rounded-md"
+              width={48}
+              height={48}
+              className="object-contain w-11 h-11 transition-all"
               priority
             />
           </div>

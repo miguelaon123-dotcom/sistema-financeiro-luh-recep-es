@@ -35,16 +35,29 @@ export default async function DashboardPage() {
           .order('due_date', { ascending: false }),
         supabase
           .from('events')
-          .select('id, title, event_date, status, budget, deposit_amount, deposit_status, contacts(name)')
+          .select('id, title, event_date, status, budget, contacts(name), financial_transactions(amount, status, description)')
           .order('event_date', { ascending: true }),
         supabase
           .from('products')
           .select('id, name, current_stock, min_stock'),
         getCaixinhas(),
       ])
+
+      const rawEvents = (eventsRes.data as any[]) || []
+      const allEvents = rawEvents.map((ev: any) => {
+        const sinalTx = ev.financial_transactions?.find((t: any) =>
+          t.description?.toLowerCase().includes('sinal')
+        )
+        return {
+          ...ev,
+          deposit_amount: sinalTx ? Number(sinalTx.amount) : 0,
+          deposit_status: sinalTx ? (sinalTx.status === 'paid' ? 'paid' : 'pending') : 'pending',
+        }
+      })
+
       return {
         txsData: txsRes.data,
-        allEvents: eventsRes.data,
+        allEvents,
         allProducts: prodsRes.data,
         caixinhas: cx,
       }
@@ -154,8 +167,9 @@ export default async function DashboardPage() {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
         {/* 1. Saldo em Caixa Real */}
         <Link
-          href="/financeiro"
-          className="group block rounded-2xl border border-[#e5e5ea] bg-white p-5 shadow-xs transition-all duration-150 hover:border-[#1d1d1f]/30 hover:shadow-sm"
+          href="/financeiro?action=ajustar-saldo"
+          className="group block rounded-2xl border border-[#e5e5ea] bg-white p-5 shadow-xs transition-all duration-150 hover:border-[#0071e3]/40 hover:shadow-sm"
+          title="Clique para ajustar o saldo real da conta bancária"
         >
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold uppercase tracking-wider text-[#6e6e73]">
@@ -170,8 +184,8 @@ export default async function DashboardPage() {
           </p>
           <div className="mt-2 flex items-center justify-between text-xs text-[#86868b]">
             <span>Recebido − Pago</span>
-            <span className="text-[#1a7f37] font-medium group-hover:underline flex items-center gap-0.5">
-              Financeiro <ArrowRight size={11} />
+            <span className="text-[#0071e3] font-medium group-hover:underline flex items-center gap-0.5">
+              Ajustar Saldo <ArrowRight size={11} />
             </span>
           </div>
         </Link>

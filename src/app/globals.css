@@ -31,18 +31,20 @@
   --border-strong:   #d2d2d7;
   --text-secondary:  #6e6e73;
   --text-tertiary:   #86868b;
+  color-scheme: light;
 }
 
 /* ── DARK MODE ───────────────────────────────────────── */
 html.dark {
   --background:      #0d0d0f;
-  --foreground:      #f0f0f0;
+  --foreground:      #f4f4f5;
   --surface:         #1c1c1e;
   --surface-hover:   #2c2c2e;
-  --border-subtle:   #3a3a3c;
-  --border-strong:   #4a4a4c;
+  --border-subtle:   #333336;
+  --border-strong:   #444448;
   --text-secondary:  #a1a1aa;
   --text-tertiary:   #71717a;
+  color-scheme: dark;
 }
 
 body {
@@ -53,30 +55,169 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* ── DARK MODE: componentes específicos ──────────────── */
-html.dark .bg-white          { background-color: #1c1c1e !important; }
-html.dark .bg-\[\#f5f5f7\]  { background-color: #2c2c2e !important; }
-html.dark .bg-\[\#f9f9fb\]  { background-color: #252527 !important; }
-html.dark .bg-\[\#fbfbfd\]  { background-color: #252527 !important; }
-html.dark .bg-\[\#f0f0f2\]  { background-color: #3a3a3c !important; }
+/* ── DARK MODE: Mapeamento Global de Cores e Superfícies ────────── */
 
-html.dark .border-\[\#e5e5ea\] { border-color: #3a3a3c !important; }
-html.dark .border-\[\#f2f2f7\] { border-color: #2c2c2e !important; }
-html.dark .border-\[\#d1d1d6\] { border-color: #4a4a4c !important; }
+/* Superfícies neutras e cartões */
+html.dark .bg-white               { background-color: #1c1c1e !important; }
+html.dark [class*="bg-white/"]    { background-color: rgba(255, 255, 255, 0.06) !important; }
+html.dark .bg-\[\#f2f2f7\]       { background-color: #18181b !important; }
+html.dark .bg-\[\#f5f5f7\]       { background-color: #242426 !important; }
+html.dark .bg-\[\#f9f9fb\]       { background-color: #202022 !important; }
+html.dark .bg-\[\#fbfbfd\]       { background-color: #222225 !important; }
+html.dark .bg-\[\#f0f0f2\]       { background-color: #2c2c2e !important; }
+html.dark .bg-\[\#fafafa\]       { background-color: #1f1f22 !important; }
+html.dark .bg-\[\#fafafc\]       { background-color: #222225 !important; }
+html.dark .bg-\[\#f8f9fa\]       { background-color: #222225 !important; }
+html.dark .bg-\[\#f8fafc\]       { background-color: #222225 !important; }
+html.dark .bg-\[\#f4f4f6\]       { background-color: #242426 !important; }
+html.dark .bg-\[\#fdfcf7\]       { background-color: #222225 !important; }
 
-html.dark .text-\[\#1d1d1f\]  { color: #f0f0f0 !important; }
-html.dark .text-\[\#6e6e73\]  { color: #a1a1aa !important; }
-html.dark .text-\[\#86868b\]  { color: #71717a !important; }
+/* Botões ativos dentro de barras segmentadas */
+html.dark .bg-\[\#f2f2f7\] .bg-white,
+html.dark .bg-\[\#18181b\] .bg-white {
+  background-color: #2e2e32 !important;
+  color: #ffffff !important;
+}
 
+/* Cartões e Badges Roxo / Pró-Labore */
+html.dark .bg-\[\#faf5ff\],
+html.dark .bg-\[\#f5f3ff\],
+html.dark .bg-\[\#f3e8ff\] {
+  background-color: rgba(124, 58, 237, 0.16) !important;
+  color: #d8b4fe !important;
+}
+html.dark .text-\[\#4c1d95\],
+html.dark .text-\[\#6d28d9\] {
+  color: #d8b4fe !important;
+}
+html.dark .border-\[\#e9d5ff\] {
+  border-color: rgba(124, 58, 237, 0.35) !important;
+}
+
+/* Cartões e Badges Verdes (Receitas, Pagos, Sucesso) */
+html.dark .bg-\[\#f0fdf4\],
+html.dark .bg-\[\#e8f8ee\],
+html.dark .bg-\[\#dcfce7\],
+html.dark .bg-\[\#bbf7d0\] {
+  background-color: rgba(22, 163, 74, 0.16) !important;
+  color: #86efac !important;
+}
+html.dark .text-\[\#14532d\],
+html.dark .text-\[\#166534\],
+html.dark .text-\[\#1a7f37\],
+html.dark .text-\[\#15803d\] {
+  color: #86efac !important;
+}
+html.dark .border-\[\#bbf7d0\] {
+  border-color: rgba(22, 163, 74, 0.35) !important;
+}
+
+/* Cartões e Badges Amarelos/Laranjas (Pendências, Alertas) */
+html.dark .bg-\[\#fffaf5\],
+html.dark .bg-\[\#fffaf0\],
+html.dark .bg-\[\#fff8e6\],
+html.dark .bg-\[\#ffedd5\],
+html.dark .bg-\[\#fef3c7\] {
+  background-color: rgba(234, 88, 12, 0.16) !important;
+  color: #fdba74 !important;
+}
+html.dark .text-\[\#7c2d12\],
+html.dark .text-\[\#9a3412\],
+html.dark .text-\[\#b45309\],
+html.dark .text-\[\#b8860b\],
+html.dark .text-\[\#8a5b00\] {
+  color: #fdba74 !important;
+}
+html.dark .border-\[\#fed7aa\],
+html.dark .border-\[\#fef3c7\],
+html.dark .border-\[\#f3e8c8\],
+html.dark .border-\[\#fbd38d\] {
+  border-color: rgba(234, 88, 12, 0.35) !important;
+}
+
+/* Cartões e Badges Vermelhos (Despesas, Cancelados, Erros) */
+html.dark .bg-\[\#fff5f5\],
+html.dark .bg-\[\#feeceb\],
+html.dark .bg-\[\#fef2f2\],
+html.dark .bg-\[\#fffbfb\],
+html.dark .bg-\[\#ffebeb\] {
+  background-color: rgba(220, 38, 38, 0.16) !important;
+  color: #fca5a5 !important;
+}
+html.dark .text-\[\#cf222e\],
+html.dark .text-\[\#991b1b\] {
+  color: #fca5a5 !important;
+}
+html.dark .border-\[\#ffdcd9\],
+html.dark .border-\[\#feeceb\],
+html.dark .border-\[\#fecaca\],
+html.dark .border-\[\#fca5a5\] {
+  border-color: rgba(220, 38, 38, 0.35) !important;
+}
+
+/* Cartões e Badges Azuis */
+html.dark .bg-\[\#ebf4fe\],
+html.dark .bg-\[\#eff6ff\] {
+  background-color: rgba(0, 113, 227, 0.16) !important;
+  color: #93c5fd !important;
+}
+
+/* Bordas Neutras */
+html.dark .border-\[\#e5e5ea\]   { border-color: #333336 !important; }
+html.dark .border-\[\#f2f2f7\]   { border-color: #2c2c2e !important; }
+html.dark .border-\[\#d1d1d6\]   { border-color: #3f3f46 !important; }
+html.dark .border-\[\#d2d2d7\]   { border-color: #3f3f46 !important; }
+html.dark .border-\[\#f0f0f2\]   { border-color: #2c2c2e !important; }
+
+/* Tipografia Neutra */
+html.dark .text-\[\#1d1d1f\]    { color: #f4f4f5 !important; }
+html.dark .text-\[\#6e6e73\]    { color: #a1a1aa !important; }
+html.dark .text-\[\#86868b\]    { color: #8e8e93 !important; }
+html.dark .text-\[\#48484a\]    { color: #d1d1d6 !important; }
+
+/* Formulários e Inputs */
 html.dark input,
 html.dark textarea,
 html.dark select {
-  background-color: #2c2c2e !important;
-  color: #f0f0f0 !important;
-  border-color: #4a4a4c !important;
+  background-color: #242426 !important;
+  color: #f4f4f5 !important;
+  border-color: #3f3f46 !important;
 }
-
+html.dark input:focus,
+html.dark textarea:focus,
+html.dark select:focus {
+  border-color: #7c3aed !important;
+}
+html.dark select option {
+  background-color: #1c1c1e !important;
+  color: #f4f4f5 !important;
+}
 html.dark input::placeholder,
 html.dark textarea::placeholder {
   color: #71717a !important;
+}
+
+/* Estados de Hover em Dark Mode */
+html.dark .hover\:bg-\[\#f5f5f7\]:hover { background-color: #2c2c2e !important; }
+html.dark .hover\:bg-\[\#f0f0f2\]:hover { background-color: #323236 !important; }
+html.dark .hover\:bg-\[\#e5e5ea\]:hover { background-color: #38383c !important; }
+html.dark .hover\:bg-\[\#fafafc\]:hover { background-color: #28282b !important; }
+html.dark .hover\:bg-\[\#fbfbfd\]:hover { background-color: #28282b !important; }
+html.dark .hover\:bg-white\/50:hover,
+html.dark .hover\:bg-white\/60:hover   { background-color: rgba(255, 255, 255, 0.08) !important; }
+
+/* Scrollbars Modernas Dark */
+html.dark ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+html.dark ::-webkit-scrollbar-track {
+  background: #141416;
+}
+html.dark ::-webkit-scrollbar-thumb {
+  background: #333336;
+  border-radius: 4px;
+}
+html.dark ::-webkit-scrollbar-thumb:hover {
+  background: #444448;
 }

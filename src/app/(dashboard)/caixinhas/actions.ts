@@ -36,7 +36,7 @@ const DEFAULT_CAIXINHAS: Caixinha[] = [
   {
     id: '11111111-1111-4111-8111-111111111111',
     name: 'Reserva de Emergência',
-    current_balance: 3500,
+    current_balance: 0,
     target_balance: 10000,
     category: 'emergencia',
     color: '#1d1d1f', // Grafite clássico
@@ -46,7 +46,7 @@ const DEFAULT_CAIXINHAS: Caixinha[] = [
   {
     id: '22222222-2222-4222-8222-222222222222',
     name: 'Reposição de Louças & Taças',
-    current_balance: 1200,
+    current_balance: 0,
     target_balance: 3000,
     category: 'equipamentos',
     color: '#0071e3', // Azul Apple
@@ -56,7 +56,7 @@ const DEFAULT_CAIXINHAS: Caixinha[] = [
   {
     id: '33333333-3333-4333-8333-333333333333',
     name: 'Capital de Giro',
-    current_balance: 4500,
+    current_balance: 0,
     target_balance: 8000,
     category: 'giro',
     color: '#1a7f37', // Verde
@@ -66,7 +66,7 @@ const DEFAULT_CAIXINHAS: Caixinha[] = [
   {
     id: '44444444-4444-4444-8444-444444444444',
     name: 'Distribuição de Lucros',
-    current_balance: 2000,
+    current_balance: 0,
     target_balance: 5000,
     category: 'meta',
     color: '#d4af37', // Dourado

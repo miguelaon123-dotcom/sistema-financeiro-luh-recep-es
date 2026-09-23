@@ -151,3 +151,82 @@ export async function updateTransaction(formData: FormData) {
   revalidatePath('/')
   return { success: true }
 }
+
+export async function adjustCashBalance(formData: FormData) {
+  const headersList = await headers()
+  const userId = headersList.get('x-user-id') || null
+  const supabase = createAdminClient()
+
+  const targetBalance = Number(formData.get('target_balance'))
+  const customNotes = (formData.get('notes') as string)?.trim()
+  const today = new Date().toISOString().split('T')[0]
+
+  if (isNaN(targetBalance)) {
+    return { error: 'Informe um valor de saldo válido.' }
+  }
+
+  // 1. Obter saldo em caixa real atual das transações pagas
+  const { data: txs, error: fetchErr } = await supabase
+    .from('financial_transactions')
+    .select('amount, type, status')
+    .eq('status', 'paid')
+
+  if (fetchErr) {
+    return { error: fetchErr.message }
+  }
+
+  const currentCash = (txs || []).reduce((acc: number, t: any) => {
+    return t.type === 'income' ? acc + Number(t.amount || 0) : acc - Number(t.amount || 0)
+  }, 0)
+
+  const diff = Number((targetBalance - currentCash).toFixed(2))
+
+  if (diff === 0) {
+    return { success: true, message: 'O saldo já está exatamente no valor informado.' }
+  }
+
+  const type = diff > 0 ? 'income' : 'expense'
+  const amount = Math.abs(diff)
+  const defaultDesc =
+    diff > 0
+      ? 'Saldo Inicial / Abertura de Conta Bancária'
+      : 'Ajuste de Saldo Bancário / Gastos anteriores'
+  const description =
+    customNotes ||
+    `${defaultDesc} (Conciliação para R$ ${targetBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })})`
+
+  const payload: any = {
+    type,
+    amount,
+    status: 'paid',
+    due_date: today,
+    paid_date: today,
+    description,
+    created_by: userId || null,
+  }
+
+  let { error } = await supabase.from('financial_transactions').insert(payload)
+  if (
+    error &&
+    (error.code === 'PGRST204' ||
+      error.message?.includes('created_by') ||
+      error.details?.includes('created_by'))
+  ) {
+    delete payload.created_by
+    const retry = await supabase.from('financial_transactions').insert(payload)
+    error = retry.error
+  }
+
+  if (error) {
+    console.error('Erro ao ajustar saldo bancário:', error)
+    return { error: error.message }
+  }
+
+  invalidateCache(['financeiro', 'dashboard', 'caixinhas'])
+  revalidatePath('/financeiro')
+  revalidatePath('/')
+  revalidatePath('/caixinhas')
+
+  return { success: true }
+}
+

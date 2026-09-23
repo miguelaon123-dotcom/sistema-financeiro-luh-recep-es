@@ -100,3 +100,31 @@ CREATE POLICY "event_staff_select" ON public.event_staff
 DROP POLICY IF EXISTS "event_staff_write" ON public.event_staff;
 CREATE POLICY "event_staff_write" ON public.event_staff
   FOR ALL USING (current_user_role() IN ('admin', 'financeiro', 'estoque'));
+
+-- 5. TABELA DE PRÓ-LABORE DE COLABORADORES
+-- Registra retiradas mensais fixas (pró-labore) por colaborador, separadas das diárias por evento.
+CREATE TABLE IF NOT EXISTS public.employee_prolabore (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  employee_id     UUID NOT NULL REFERENCES public.employees(id) ON DELETE CASCADE,
+  competencia     TEXT NOT NULL,                                  -- Ex: "2024-09", "2025-01"
+  amount          DECIMAL(12,2) NOT NULL DEFAULT 0.00,            -- Valor do pró-labore (R$)
+  description     TEXT,                                           -- Observação / motivo
+  payment_status  TEXT CHECK (payment_status IN ('pending', 'paid')) DEFAULT 'pending',
+  paid_at         TIMESTAMPTZ,
+  created_by      UUID REFERENCES public.users(id) ON DELETE SET NULL,
+  created_at      TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_prolabore_employee ON public.employee_prolabore(employee_id);
+CREATE INDEX IF NOT EXISTS idx_prolabore_status   ON public.employee_prolabore(payment_status);
+CREATE INDEX IF NOT EXISTS idx_prolabore_comp     ON public.employee_prolabore(competencia);
+
+ALTER TABLE public.employee_prolabore ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "prolabore_select" ON public.employee_prolabore;
+CREATE POLICY "prolabore_select" ON public.employee_prolabore
+  FOR SELECT USING (current_user_id() IS NOT NULL);
+
+DROP POLICY IF EXISTS "prolabore_write" ON public.employee_prolabore;
+CREATE POLICY "prolabore_write" ON public.employee_prolabore
+  FOR ALL USING (current_user_role() IN ('admin', 'financeiro', 'estoque'));

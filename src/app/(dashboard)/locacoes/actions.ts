@@ -540,6 +540,17 @@ export async function deleteRental(rentalId: string) {
   const supabase = createAdminClient() as any
 
   try {
+    const { data: rent } = await supabase.from('rentals').select('code').eq('id', rentalId).maybeSingle()
+    if (rent?.code) {
+      await supabase.from('financial_transactions').delete().ilike('description', `%${rent.code}%`)
+    }
+  } catch {}
+
+  try {
+    await supabase.from('rental_items').delete().eq('rental_id', rentalId)
+  } catch {}
+
+  try {
     await supabase.from('rentals').delete().eq('id', rentalId)
   } catch {}
 

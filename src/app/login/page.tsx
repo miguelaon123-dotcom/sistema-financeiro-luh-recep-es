@@ -22,11 +22,11 @@ export default async function LoginPage({
       {/* Logo / Marca */}
       <div className="mb-8 text-center flex flex-col items-center">
         <Image
-          src="/logo-luh.jpg"
+          src="/logo-luh.png"
           alt="Luh Recepções"
-          width={180}
-          height={70}
-          className="object-contain h-16 w-auto max-w-[180px] mb-2"
+          width={280}
+          height={112}
+          className="object-contain h-28 w-auto max-w-[280px] mb-2 drop-shadow-sm"
           priority
         />
         <p className="mt-1 text-xs font-medium uppercase tracking-wider text-[#86868b]">

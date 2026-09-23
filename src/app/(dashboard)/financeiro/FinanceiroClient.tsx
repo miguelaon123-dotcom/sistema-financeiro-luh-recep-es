@@ -17,8 +17,17 @@ import {
   PartyPopper,
   Receipt,
   Wallet,
+  Landmark,
+  Info,
+  Check,
 } from 'lucide-react'
-import { createTransaction, updateTransaction, updateTransactionStatus, deleteTransaction } from './actions'
+import {
+  createTransaction,
+  updateTransaction,
+  updateTransactionStatus,
+  deleteTransaction,
+  adjustCashBalance,
+} from './actions'
 import { Caixinha } from '../caixinhas/actions'
 import { CaixinhasFinanceiras } from '@/components/CaixinhasFinanceiras'
 import { useConfirm } from '@/components/ConfirmDialog'
@@ -74,6 +83,12 @@ export function FinanceiroClient({
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const { confirm, ConfirmDialog } = useConfirm()
+
+  // Estado para Ajustar Saldo Real Bancário
+  const [isAdjustModalOpen, setIsAdjustModalOpen] = useState(initialAction === 'ajustar-saldo')
+  const [targetBalanceInput, setTargetBalanceInput] = useState('')
+  const [adjustNotes, setAdjustNotes] = useState('')
+  const [adjustError, setAdjustError] = useState<string | null>(null)
 
   // Cálculos dinâmicos
   const pendingIncome = localTransactions
@@ -134,6 +149,23 @@ export function FinanceiroClient({
     })
   }
 
+  const handleAdjustSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    setAdjustError(null)
+    const form = e.currentTarget
+    const formData = new FormData(form)
+
+    startTransition(async () => {
+      const res = await adjustCashBalance(formData)
+      if (res?.error) {
+        setAdjustError(res.error)
+      } else {
+        setIsAdjustModalOpen(false)
+        router.refresh()
+      }
+    })
+  }
+
   const handleTogglePaid = (id: string, currentStatus: string) => {
     const nextStatus = currentStatus === 'paid' ? 'pending' : 'paid'
     // Otimista
@@ -173,7 +205,19 @@ export function FinanceiroClient({
             Controle de fluxo de caixa, caixinhas e movimentações da Luh Recepções.
           </p>
         </div>
-        <div className="flex items-center gap-2.5">
+        <div className="flex flex-wrap items-center gap-2.5">
+          <button
+            onClick={() => {
+              setAdjustError(null)
+              setTargetBalanceInput(cashBalance !== 0 ? String(cashBalance) : '')
+              setAdjustNotes('')
+              setIsAdjustModalOpen(true)
+            }}
+            className="flex items-center space-x-1.5 rounded-xl bg-white px-3.5 py-2 text-xs font-semibold text-[#1d1d1f] hover:bg-[#f5f5f7] transition-all border border-[#d2d2d7] cursor-pointer shadow-2xs"
+          >
+            <Landmark size={15} className="text-[#0071e3]" />
+            <span>Ajustar Saldo Bancário</span>
+          </button>
           <button
             onClick={() => {
               setErrorMessage(null)
@@ -200,25 +244,44 @@ export function FinanceiroClient({
       {/* Summary Cards Consolidados */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
         {/* 1. Saldo Real em Caixa */}
-        <div className="rounded-2xl border border-[#e5e5ea] bg-white p-5 shadow-xs">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-[#6e6e73]">
-              Saldo em Caixa (Real)
-            </span>
-            <div className="rounded-xl bg-[#e8f8ee] p-1.5 text-[#1a7f37]">
-              <Wallet size={16} />
+        <div className="rounded-2xl border border-[#e5e5ea] bg-white p-5 shadow-xs flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase tracking-wider text-[#6e6e73]">
+                Saldo em Caixa (Real)
+              </span>
+              <div className="rounded-xl bg-[#e8f8ee] p-1.5 text-[#1a7f37]">
+                <Wallet size={16} />
+              </div>
             </div>
+            <p
+              className={`mt-2 text-2xl font-bold tracking-tight ${
+                cashBalance >= 0 ? 'text-[#1d1d1f]' : 'text-[#cf222e]'
+              }`}
+            >
+              R$ {cashBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+            </p>
+            <span className="mt-1 block text-xs text-[#86868b]">
+              Recebido ({totalReceived.toLocaleString('pt-BR', { minimumFractionDigits: 0 })}) − Pago ({totalPaid.toLocaleString('pt-BR', { minimumFractionDigits: 0 })})
+            </span>
           </div>
-          <p
-            className={`mt-2 text-2xl font-bold tracking-tight ${
-              cashBalance >= 0 ? 'text-[#1d1d1f]' : 'text-[#cf222e]'
-            }`}
-          >
-            R$ {cashBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-          </p>
-          <span className="mt-1 block text-xs text-[#86868b]">
-            Recebido ({totalReceived.toLocaleString('pt-BR', { minimumFractionDigits: 0 })}) − Pago ({totalPaid.toLocaleString('pt-BR', { minimumFractionDigits: 0 })})
-          </span>
+
+          <div className="mt-3 pt-2.5 border-t border-[#f2f2f7] flex items-center justify-between">
+            <button
+              type="button"
+              onClick={() => {
+                setAdjustError(null)
+                setTargetBalanceInput(cashBalance !== 0 ? String(cashBalance) : '')
+                setAdjustNotes('')
+                setIsAdjustModalOpen(true)
+              }}
+              className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#0071e3] hover:text-[#0051a8] transition-colors cursor-pointer"
+              title="Ajustar saldo para conciliar com o extrato real da conta bancária"
+            >
+              <Landmark size={13} />
+              <span>Ajustar Saldo Real</span>
+            </button>
+          </div>
         </div>
 
         {/* 2. Saldo Livre */}
@@ -685,6 +748,149 @@ export function FinanceiroClient({
           </div>
         </div>
       )}
+
+      {/* Modal Ajustar Saldo Real da Conta Bancária */}
+      {isAdjustModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-in fade-in duration-200">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl border border-[#e5e5ea] animate-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between pb-4 border-b border-[#f2f2f7]">
+              <div className="flex items-center gap-2.5">
+                <div className="rounded-xl bg-[#ebf4fe] p-2 text-[#0071e3]">
+                  <Landmark size={20} />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-[#1d1d1f]">
+                    Ajustar Saldo Real da Conta
+                  </h3>
+                  <p className="text-xs text-[#86868b]">
+                    Concilie o caixa com o saldo que existe no seu banco hoje
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsAdjustModalOpen(false)}
+                className="rounded-lg p-1 text-[#86868b] hover:bg-[#f5f5f7] hover:text-[#1d1d1f] transition-colors cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {adjustError && (
+              <div className="mt-4 p-3 rounded-xl bg-[#fff2f0] border border-[#ffccc7] text-xs text-[#cf222e] font-medium">
+                {adjustError}
+              </div>
+            )}
+
+            <form onSubmit={handleAdjustSubmit} className="space-y-4 mt-4">
+              {/* Card Comparativo */}
+              <div className="p-3.5 rounded-xl bg-[#f5f5f7] border border-[#e5e5ea] text-xs space-y-1.5">
+                <div className="flex justify-between items-center">
+                  <span className="text-[#6e6e73]">Saldo atual registrado no sistema:</span>
+                  <strong className="text-[#1d1d1f] font-mono text-sm">
+                    R$ {cashBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                  </strong>
+                </div>
+                <p className="text-[11px] text-[#86868b] leading-relaxed pt-1 border-t border-[#e5e5ea]">
+                  💡 <strong>Por que usar?</strong> Se antes do sistema o financeiro estava desorganizado ou valores foram gastos sem lançamento, basta informar o saldo real da sua conta bancária para alinhar tudo automaticamente.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-[#1d1d1f] mb-1.5">
+                  Saldo Real Atual na Conta do Banco (R$) *
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm font-semibold text-[#86868b]">
+                    R$
+                  </span>
+                  <input
+                    type="number"
+                    step="0.01"
+                    name="target_balance"
+                    required
+                    value={targetBalanceInput}
+                    onChange={(e) => setTargetBalanceInput(e.target.value)}
+                    placeholder="Ex: 500.00 ou 0.00"
+                    className="w-full rounded-xl border border-[#d2d2d7] bg-[#fbfbfd] py-2.5 pl-10 pr-3 text-sm font-bold text-[#1d1d1f] focus:border-[#0071e3] focus:bg-white focus:outline-hidden transition-all"
+                    autoFocus
+                  />
+                </div>
+              </div>
+
+              {/* Cálculo do Impacto em Tempo Real */}
+              {targetBalanceInput !== '' && !isNaN(Number(targetBalanceInput.replace(',', '.'))) && (
+                (() => {
+                  const targetNum = Number(targetBalanceInput.replace(',', '.'))
+                  const diff = Number((targetNum - cashBalance).toFixed(2))
+                  return (
+                    <div
+                      className={`p-3 rounded-xl border text-xs leading-relaxed ${
+                        diff > 0
+                          ? 'bg-[#e8f8ee] border-[#b4e8c7] text-[#1a7f37]'
+                          : diff < 0
+                          ? 'bg-[#fff8e6] border-[#ffe58f] text-[#946200]'
+                          : 'bg-[#f5f5f7] border-[#e5e5ea] text-[#6e6e73]'
+                      }`}
+                    >
+                      {diff > 0 ? (
+                        <>
+                          📈 <strong>Aumento de Saldo:</strong> Será registrado um ajuste de entrada de{' '}
+                          <strong>R$ {diff.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong>{' '}
+                          (Saldo Inicial/Aporte) para igualar ao banco.
+                        </>
+                      ) : diff < 0 ? (
+                        <>
+                          📉 <strong>Acerto de Gastos Anteriores:</strong> Será registrado um ajuste de saída de{' '}
+                          <strong>R$ {Math.abs(diff).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong>{' '}
+                          referente a dinheiro gasto no passado sem lançamento.
+                        </>
+                      ) : (
+                        <>
+                          ✅ O saldo já está exatamente no mesmo valor do banco (R${' '}
+                          {targetNum.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}).
+                        </>
+                      )}
+                    </div>
+                  )
+                })()
+              )}
+
+              <div>
+                <label className="block text-xs font-semibold text-[#1d1d1f] mb-1.5">
+                  Observação / Motivo (Opcional)
+                </label>
+                <input
+                  type="text"
+                  name="notes"
+                  value={adjustNotes}
+                  onChange={(e) => setAdjustNotes(e.target.value)}
+                  placeholder="Ex: Conciliação inicial - gastos anteriores desorganizados"
+                  className="w-full rounded-xl border border-[#d2d2d7] bg-[#fbfbfd] px-3.5 py-2 text-xs text-[#1d1d1f] focus:border-[#0071e3] focus:bg-white focus:outline-hidden transition-all"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2.5 pt-4 border-t border-[#f2f2f7]">
+                <button
+                  type="button"
+                  onClick={() => setIsAdjustModalOpen(false)}
+                  className="px-4 py-2 text-xs font-semibold text-[#6e6e73] hover:text-[#1d1d1f] transition-colors cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={isPending || targetBalanceInput === ''}
+                  className="flex items-center gap-1.5 rounded-xl bg-[#0071e3] hover:bg-[#0051a8] px-5 py-2 text-xs font-semibold text-white transition-all shadow-xs active:scale-[0.98] disabled:opacity-50 cursor-pointer"
+                >
+                  {isPending ? 'Salvando...' : 'Confirmar Saldo Real'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
+

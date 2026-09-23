@@ -13,14 +13,14 @@ export default async function EventosPage({
   const supabase = createAdminClient()
 
   // Buscar todos os dados de eventos com cache ultra-rápido em memória
-  const { events, products, eventMovements, employees, staffAssignments } = await getCachedData(
+  const { events, products, eventMovements, employees, staffAssignments, contacts } = await getCachedData(
     'eventos_data',
     async () => {
-      const [eventsRes, prodsRes, movementsRes, employeesRes, staffRes] = await Promise.all([
+      const [eventsRes, prodsRes, movementsRes, employeesRes, staffRes, contactsRes] = await Promise.all([
         supabase
           .from('events')
           .select(`
-            id, title, event_date, location, budget, deposit_amount, deposit_status, deposit_paid_date, status,
+            id, title, event_date, location, budget, status,
             financial_transactions(id, type, amount, status, due_date, paid_date, description)
           `)
           .order('event_date', { ascending: true }),
@@ -41,14 +41,32 @@ export default async function EventosPage({
         supabase
           .from('event_staff')
           .select('id, event_id, employee_id, role, daily_rate, status'),
+        supabase
+          .from('contacts')
+          .select('id, name')
+          .order('name', { ascending: true }),
       ])
 
+      const rawEvents = (eventsRes.data as any[]) || []
+      const mappedEvents = rawEvents.map((ev: any) => {
+        const sinalTx = ev.financial_transactions?.find((t: any) =>
+          t.description?.toLowerCase().includes('sinal')
+        )
+        return {
+          ...ev,
+          deposit_amount: sinalTx ? Number(sinalTx.amount) : 0,
+          deposit_status: sinalTx ? (sinalTx.status === 'paid' ? 'paid' : 'pending') : 'pending',
+          deposit_paid_date: sinalTx?.paid_date || null,
+        }
+      })
+
       return {
-        events: (eventsRes.data as any[]) || [],
+        events: mappedEvents,
         products: (prodsRes.data as any[]) || [],
         eventMovements: (movementsRes.data as any[]) || [],
         employees: (employeesRes.data as any[]) || [],
         staffAssignments: (staffRes.data as any[]) || [],
+        contacts: (contactsRes.data as any[]) || [],
       }
     }
   )
@@ -56,7 +74,7 @@ export default async function EventosPage({
   return (
     <EventosClient
       events={events}
-      contacts={[]}
+      contacts={contacts}
       products={products}
       eventMovements={eventMovements}
       employees={employees}
