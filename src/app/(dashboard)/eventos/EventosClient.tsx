@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition, useEffect } from 'react'
+import { useState, useTransition, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   Plus,
@@ -31,6 +31,9 @@ import {
   Clock,
   Users,
   CalendarClock,
+  ChevronLeft,
+  ChevronRight,
+  Filter,
 } from 'lucide-react'
 import {
   createEvent,
@@ -140,6 +143,8 @@ export function EventosClient({
 
   const [searchTerm, setSearchTerm] = useState('')
   const [filterStatus, setFilterStatus] = useState<string>('all')
+  const [selectedMonth, setSelectedMonth] = useState<string>('all')
+  const [selectedYear, setSelectedYear] = useState<string>('all')
   const [selectedDateFilter, setSelectedDateFilter] = useState<string>('')
   const [isModalOpen, setIsModalOpen] = useState(initialOpenModal)
   const [editingEvent, setEditingEvent] = useState<EventItem | null>(null)
@@ -259,18 +264,168 @@ export function EventosClient({
     return null
   }
 
+  // Lista de meses
+  const MONTH_NAMES = [
+    { value: '01', label: 'Janeiro' },
+    { value: '02', label: 'Fevereiro' },
+    { value: '03', label: 'Março' },
+    { value: '04', label: 'Abril' },
+    { value: '05', label: 'Maio' },
+    { value: '06', label: 'Junho' },
+    { value: '07', label: 'Julho' },
+    { value: '08', label: 'Agosto' },
+    { value: '09', label: 'Setembro' },
+    { value: '10', label: 'Outubro' },
+    { value: '11', label: 'Novembro' },
+    { value: '12', label: 'Dezembro' },
+  ]
+
+  // Anos disponíveis dinamicamente a partir dos eventos cadastrados + ano atual e adjacentes
+  const availableYears = useMemo(() => {
+    const currentY = new Date().getFullYear()
+    const yearsSet = new Set<string>()
+    yearsSet.add(String(currentY))
+    yearsSet.add(String(currentY - 1))
+    yearsSet.add(String(currentY + 1))
+
+    localEvents.forEach((e) => {
+      if (e.event_date) {
+        const y = e.event_date.split('T')[0].split('-')[0]
+        if (y && !isNaN(Number(y)) && y.length === 4) {
+          yearsSet.add(y)
+        }
+      }
+    })
+
+    return Array.from(yearsSet).sort()
+  }, [localEvents])
+
   // Dias úteis para atalhos rápidos
-  const todayStr = new Date().toISOString().split('T')[0]
+  const now = new Date()
+  const todayStr = now.toISOString().split('T')[0]
   const tomorrowObj = new Date()
   tomorrowObj.setDate(tomorrowObj.getDate() + 1)
   const tomorrowStr = tomorrowObj.toISOString().split('T')[0]
 
-  // Contagem de eventos no dia selecionado
-  const eventsOnSelectedDate = selectedDateFilter
-    ? localEvents.filter((evt) => evt.event_date === selectedDateFilter)
-    : []
+  const currentYearStr = String(now.getFullYear())
+  const currentMonthStr = String(now.getMonth() + 1).padStart(2, '0')
 
-  // Filtragem de Eventos (por busca, status e data específica)
+  const nextMonthDate = new Date(now.getFullYear(), now.getMonth() + 1, 1)
+  const nextMonthYearStr = String(nextMonthDate.getFullYear())
+  const nextMonthStr = String(nextMonthDate.getMonth() + 1).padStart(2, '0')
+
+  const isCurrentMonthSelected =
+    !selectedDateFilter &&
+    selectedMonth === currentMonthStr &&
+    selectedYear === currentYearStr
+
+  const isNextMonthSelected =
+    !selectedDateFilter &&
+    selectedMonth === nextMonthStr &&
+    selectedYear === nextMonthYearStr
+
+  const hasActiveDateFilter =
+    Boolean(selectedDateFilter) || selectedMonth !== 'all' || selectedYear !== 'all'
+
+  // Manipuladores de Filtros de Período e Data
+  const handleMonthChange = (month: string) => {
+    setSelectedMonth(month)
+    if (selectedDateFilter) {
+      setSelectedDateFilter('')
+    }
+  }
+
+  const handleYearChange = (year: string) => {
+    setSelectedYear(year)
+    if (selectedDateFilter) {
+      setSelectedDateFilter('')
+    }
+  }
+
+  const handleSelectCurrentMonth = () => {
+    setSelectedYear(currentYearStr)
+    setSelectedMonth(currentMonthStr)
+    setSelectedDateFilter('')
+  }
+
+  const handleSelectNextMonth = () => {
+    setSelectedYear(nextMonthYearStr)
+    setSelectedMonth(nextMonthStr)
+    setSelectedDateFilter('')
+  }
+
+  const handleNavigateMonth = (direction: -1 | 1) => {
+    const yr = selectedYear !== 'all' ? parseInt(selectedYear, 10) : now.getFullYear()
+    const mo = selectedMonth !== 'all' ? parseInt(selectedMonth, 10) - 1 : now.getMonth()
+    const target = new Date(yr, mo + direction, 1)
+    setSelectedYear(String(target.getFullYear()))
+    setSelectedMonth(String(target.getMonth() + 1).padStart(2, '0'))
+    setSelectedDateFilter('')
+  }
+
+  const handleDayChange = (val: string) => {
+    setSelectedDateFilter(val)
+    if (val) {
+      const parts = val.split('-')
+      if (parts.length >= 2) {
+        setSelectedYear(parts[0])
+        setSelectedMonth(parts[1])
+      }
+    }
+  }
+
+  const handleSelectToday = () => {
+    setSelectedDateFilter(todayStr)
+    const parts = todayStr.split('-')
+    setSelectedYear(parts[0])
+    setSelectedMonth(parts[1])
+  }
+
+  const handleSelectTomorrow = () => {
+    setSelectedDateFilter(tomorrowStr)
+    const parts = tomorrowStr.split('-')
+    setSelectedYear(parts[0])
+    setSelectedMonth(parts[1])
+  }
+
+  const handleNavigateDay = (direction: -1 | 1) => {
+    if (!selectedDateFilter) return
+    const d = new Date(selectedDateFilter + 'T00:00:00')
+    d.setDate(d.getDate() + direction)
+    const newStr = d.toISOString().split('T')[0]
+    handleDayChange(newStr)
+  }
+
+  const handleClearDayOnly = () => {
+    setSelectedDateFilter('')
+  }
+
+  const handleClearDateFilters = () => {
+    setSelectedDateFilter('')
+    setSelectedMonth('all')
+    setSelectedYear('all')
+  }
+
+  // Label descritivo do período filtrado
+  const periodLabel = useMemo(() => {
+    if (selectedDateFilter) {
+      return `em ${new Date(selectedDateFilter + 'T00:00:00').toLocaleDateString('pt-BR')}`
+    }
+    if (selectedMonth !== 'all' && selectedYear !== 'all') {
+      const mName = MONTH_NAMES.find((m) => m.value === selectedMonth)?.label
+      return `em ${mName} de ${selectedYear}`
+    }
+    if (selectedMonth !== 'all' && selectedYear === 'all') {
+      const mName = MONTH_NAMES.find((m) => m.value === selectedMonth)?.label
+      return `em ${mName}`
+    }
+    if (selectedMonth === 'all' && selectedYear !== 'all') {
+      return `em ${selectedYear}`
+    }
+    return 'no total'
+  }, [selectedDateFilter, selectedMonth, selectedYear])
+
+  // Filtragem de Eventos (por busca, status, mês, ano e dia específico)
   const filteredEvents = localEvents.filter((evt) => {
     const matchesSearch =
       evt.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -278,9 +433,17 @@ export function EventosClient({
       (evt.location && evt.location.toLowerCase().includes(searchTerm.toLowerCase()))
 
     const matchesStatus = filterStatus === 'all' || evt.status === filterStatus
-    const matchesDate = !selectedDateFilter || evt.event_date === selectedDateFilter
 
-    return matchesSearch && matchesStatus && matchesDate
+    const evtDate = evt.event_date ? evt.event_date.split('T')[0] : ''
+    const parts = evtDate.split('-')
+    const evtYear = parts[0]
+    const evtMonth = parts[1]
+
+    const matchesExactDate = !selectedDateFilter || evtDate === selectedDateFilter
+    const matchesMonth = selectedMonth === 'all' || evtMonth === selectedMonth
+    const matchesYear = selectedYear === 'all' || evtYear === selectedYear
+
+    return matchesSearch && matchesStatus && matchesExactDate && matchesMonth && matchesYear
   })
 
   // Submit Evento Novo / Editar
@@ -698,103 +861,210 @@ Por favor, confirmem presença com antecedência! ✅`
           </div>
         </div>
 
-        {/* Barra de Filtro de Datas e Dias */}
-        <div className="flex flex-wrap items-center justify-between gap-3 mb-6 p-3.5 rounded-2xl bg-[#fbfbfd] border border-[#e5e5ea]">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs font-semibold text-[#1d1d1f] flex items-center gap-1.5 mr-1">
-              <Calendar className="h-3.5 w-3.5 text-[#b8860b]" />
-              Filtrar por Dia:
-            </span>
+        {/* Barra de Filtros de Período (Mês, Ano e Dia) */}
+        <div className="mb-6 p-4 rounded-2xl bg-[#fbfbfd] border border-[#e5e5ea] space-y-3.5 shadow-2xs">
+          {/* Linha Principal: Mês, Ano, Atalhos Rápidos e Resumo */}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-2.5">
+              <span className="text-xs font-semibold text-[#1d1d1f] flex items-center gap-1.5">
+                <Calendar className="h-3.5 w-3.5 text-[#b8860b]" />
+                Período:
+              </span>
 
-            <input
-              type="date"
-              value={selectedDateFilter}
-              onChange={(e) => setSelectedDateFilter(e.target.value)}
-              className="rounded-xl border border-[#d1d1d6] bg-white px-3 py-1.5 text-xs text-[#1d1d1f] font-medium focus:border-[#1d1d1f] focus:outline-none transition-all cursor-pointer"
-              title="Selecione uma data para verificar quantos eventos existem neste dia"
-            />
+              {/* Seletor de Mês */}
+              <select
+                value={selectedMonth}
+                onChange={(e) => handleMonthChange(e.target.value)}
+                className="rounded-xl border border-[#d1d1d6] bg-white px-3 py-1.5 text-xs text-[#1d1d1f] font-medium focus:border-[#1d1d1f] focus:outline-none transition-all cursor-pointer hover:border-[#86868b]"
+                title="Filtrar por Mês"
+              >
+                <option value="all">Todos os Meses</option>
+                {MONTH_NAMES.map((m) => (
+                  <option key={m.value} value={m.value}>
+                    {m.label}
+                  </option>
+                ))}
+              </select>
 
-            <button
-              type="button"
-              onClick={() => setSelectedDateFilter(todayStr)}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-xl border transition-all cursor-pointer ${
-                selectedDateFilter === todayStr
-                  ? 'bg-[#1d1d1f] text-white border-[#1d1d1f] shadow-xs'
-                  : 'bg-white text-[#6e6e73] border-[#d1d1d6] hover:text-[#1d1d1f] hover:bg-[#f5f5f7]'
-              }`}
-            >
-              Hoje
-            </button>
+              {/* Seletor de Ano */}
+              <select
+                value={selectedYear}
+                onChange={(e) => handleYearChange(e.target.value)}
+                className="rounded-xl border border-[#d1d1d6] bg-white px-3 py-1.5 text-xs text-[#1d1d1f] font-medium focus:border-[#1d1d1f] focus:outline-none transition-all cursor-pointer hover:border-[#86868b]"
+                title="Filtrar por Ano"
+              >
+                <option value="all">Todos os Anos</option>
+                {availableYears.map((yr) => (
+                  <option key={yr} value={yr}>
+                    {yr}
+                  </option>
+                ))}
+              </select>
 
-            <button
-              type="button"
-              onClick={() => setSelectedDateFilter(tomorrowStr)}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-xl border transition-all cursor-pointer ${
-                selectedDateFilter === tomorrowStr
-                  ? 'bg-[#1d1d1f] text-white border-[#1d1d1f] shadow-xs'
-                  : 'bg-white text-[#6e6e73] border-[#d1d1d6] hover:text-[#1d1d1f] hover:bg-[#f5f5f7]'
-              }`}
-            >
-              Amanhã
-            </button>
+              {/* Navegação Rápida de Mês */}
+              {selectedMonth !== 'all' && (
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => handleNavigateMonth(-1)}
+                    className="p-1.5 text-xs font-medium rounded-lg border border-[#d1d1d6] bg-white text-[#6e6e73] hover:text-[#1d1d1f] hover:bg-[#f5f5f7] cursor-pointer"
+                    title="Mês anterior"
+                  >
+                    <ChevronLeft size={14} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleNavigateMonth(1)}
+                    className="p-1.5 text-xs font-medium rounded-lg border border-[#d1d1d6] bg-white text-[#6e6e73] hover:text-[#1d1d1f] hover:bg-[#f5f5f7] cursor-pointer"
+                    title="Próximo mês"
+                  >
+                    <ChevronRight size={14} />
+                  </button>
+                </div>
+              )}
 
-            {selectedDateFilter && (
+              <div className="hidden sm:block h-4 w-px bg-[#e5e5ea]" />
+
+              {/* Atalhos rápidos de Mês */}
               <button
                 type="button"
-                onClick={() => setSelectedDateFilter('')}
-                className="px-3 py-1.5 text-xs font-semibold rounded-xl bg-[#feeceb] text-[#cf222e] hover:bg-[#fdd8d5] transition-all cursor-pointer flex items-center gap-1"
-                title="Limpar filtro e ver todos os dias"
+                onClick={handleSelectCurrentMonth}
+                className={`px-3 py-1.5 text-xs font-semibold rounded-xl border transition-all cursor-pointer ${
+                  isCurrentMonthSelected
+                    ? 'bg-[#1d1d1f] text-white border-[#1d1d1f] shadow-xs'
+                    : 'bg-white text-[#6e6e73] border-[#d1d1d6] hover:text-[#1d1d1f] hover:bg-[#f5f5f7]'
+                }`}
+                title="Filtrar eventos deste mês"
               >
-                <X size={13} />
-                <span>Ver todos os dias</span>
+                Este Mês
               </button>
-            )}
+
+              <button
+                type="button"
+                onClick={handleSelectNextMonth}
+                className={`px-3 py-1.5 text-xs font-semibold rounded-xl border transition-all cursor-pointer ${
+                  isNextMonthSelected
+                    ? 'bg-[#1d1d1f] text-white border-[#1d1d1f] shadow-xs'
+                    : 'bg-white text-[#6e6e73] border-[#d1d1d6] hover:text-[#1d1d1f] hover:bg-[#f5f5f7]'
+                }`}
+                title="Filtrar eventos do próximo mês"
+              >
+                Próximo Mês
+              </button>
+            </div>
+
+            {/* Contador / Indicador de Eventos Encontrados */}
+            <div className="flex items-center gap-2">
+              <span
+                className={`text-xs font-semibold px-3 py-1.5 rounded-xl border flex items-center gap-1.5 ${
+                  hasActiveDateFilter
+                    ? filteredEvents.length > 0
+                      ? 'bg-[#e8f8ee] border-[#1a7f37]/30 text-[#1a7f37]'
+                      : 'bg-[#fff8e6] border-[#b8860b]/30 text-[#b8860b]'
+                    : 'bg-white border-[#e5e5ea] text-[#6e6e73]'
+                }`}
+              >
+                <span
+                  className={`w-2 h-2 rounded-full ${
+                    hasActiveDateFilter
+                      ? filteredEvents.length > 0
+                        ? 'bg-[#1a7f37]'
+                        : 'bg-[#b8860b]'
+                      : 'bg-[#86868b]'
+                  }`}
+                />
+                <strong>{filteredEvents.length}</strong>{' '}
+                {filteredEvents.length === 1 ? 'evento' : 'eventos'}{' '}
+                {periodLabel}
+              </span>
+
+              {hasActiveDateFilter && (
+                <button
+                  type="button"
+                  onClick={handleClearDateFilters}
+                  className="px-2.5 py-1.5 text-xs font-semibold rounded-xl bg-[#feeceb] text-[#cf222e] hover:bg-[#fdd8d5] transition-all cursor-pointer flex items-center gap-1"
+                  title="Limpar todos os filtros de data"
+                >
+                  <X size={13} />
+                  <span className="hidden sm:inline">Limpar Filtros</span>
+                </button>
+              )}
+            </div>
           </div>
 
-          {/* Contador / Indicador de Eventos naquele Dia */}
-          {selectedDateFilter ? (
-            <div className="flex items-center gap-2">
-              <span className={`text-xs font-semibold px-3 py-1.5 rounded-xl border flex items-center gap-1.5 ${
-                eventsOnSelectedDate.length > 0
-                  ? 'bg-[#e8f8ee] border-[#1a7f37]/30 text-[#1a7f37]'
-                  : 'bg-[#fff8e6] border-[#b8860b]/30 text-[#b8860b]'
-              }`}>
-                <span className={`w-2 h-2 rounded-full ${eventsOnSelectedDate.length > 0 ? 'bg-[#1a7f37]' : 'bg-[#b8860b]'}`}></span>
-                <strong>{eventsOnSelectedDate.length}</strong> {eventsOnSelectedDate.length === 1 ? 'evento em' : 'eventos em'}{' '}
-                {new Date(selectedDateFilter + 'T00:00:00').toLocaleDateString('pt-BR')}
+          {/* Linha Secundária: Dia específico e atalhos rápidos de dia */}
+          <div className="flex flex-wrap items-center justify-between gap-3 pt-2.5 border-t border-[#f0f0f4]">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs text-[#6e6e73] flex items-center gap-1 font-medium">
+                <Clock className="h-3 w-3 text-[#86868b]" />
+                Dia específico:
               </span>
+
+              <input
+                type="date"
+                value={selectedDateFilter}
+                onChange={(e) => handleDayChange(e.target.value)}
+                className="rounded-xl border border-[#d1d1d6] bg-white px-2.5 py-1 text-xs text-[#1d1d1f] font-medium focus:border-[#1d1d1f] focus:outline-none transition-all cursor-pointer hover:border-[#86868b]"
+                title="Selecione um dia específico no calendário"
+              />
+
+              <button
+                type="button"
+                onClick={handleSelectToday}
+                className={`px-2.5 py-1 text-xs font-semibold rounded-lg border transition-all cursor-pointer ${
+                  selectedDateFilter === todayStr
+                    ? 'bg-[#1d1d1f] text-white border-[#1d1d1f]'
+                    : 'bg-white text-[#6e6e73] border-[#d1d1d6] hover:text-[#1d1d1f] hover:bg-[#f5f5f7]'
+                }`}
+              >
+                Hoje
+              </button>
+
+              <button
+                type="button"
+                onClick={handleSelectTomorrow}
+                className={`px-2.5 py-1 text-xs font-semibold rounded-lg border transition-all cursor-pointer ${
+                  selectedDateFilter === tomorrowStr
+                    ? 'bg-[#1d1d1f] text-white border-[#1d1d1f]'
+                    : 'bg-white text-[#6e6e73] border-[#d1d1d6] hover:text-[#1d1d1f] hover:bg-[#f5f5f7]'
+                }`}
+              >
+                Amanhã
+              </button>
+
+              {selectedDateFilter && (
+                <button
+                  type="button"
+                  onClick={handleClearDayOnly}
+                  className="px-2 py-1 text-xs font-medium rounded-lg text-[#0071e3] hover:bg-[#ebf4fe] transition-all cursor-pointer"
+                  title="Remover filtro de dia específico e ver todo o mês"
+                >
+                  Ver mês completo
+                </button>
+              )}
+            </div>
+
+            {selectedDateFilter && (
               <div className="flex items-center gap-1">
                 <button
                   type="button"
-                  onClick={() => {
-                    const d = new Date(selectedDateFilter + 'T00:00:00')
-                    d.setDate(d.getDate() - 1)
-                    setSelectedDateFilter(d.toISOString().split('T')[0])
-                  }}
-                  className="px-2.5 py-1 text-xs font-medium rounded-lg border border-[#d1d1d6] bg-white text-[#6e6e73] hover:text-[#1d1d1f] hover:bg-[#f5f5f7] cursor-pointer"
+                  onClick={() => handleNavigateDay(-1)}
+                  className="px-2 py-0.5 text-xs font-medium rounded-lg border border-[#d1d1d6] bg-white text-[#6e6e73] hover:text-[#1d1d1f] hover:bg-[#f5f5f7] cursor-pointer"
                   title="Ver dia anterior"
                 >
-                  ◀ Anterior
+                  ◀ Dia anterior
                 </button>
                 <button
                   type="button"
-                  onClick={() => {
-                    const d = new Date(selectedDateFilter + 'T00:00:00')
-                    d.setDate(d.getDate() + 1)
-                    setSelectedDateFilter(d.toISOString().split('T')[0])
-                  }}
-                  className="px-2.5 py-1 text-xs font-medium rounded-lg border border-[#d1d1d6] bg-white text-[#6e6e73] hover:text-[#1d1d1f] hover:bg-[#f5f5f7] cursor-pointer"
+                  onClick={() => handleNavigateDay(1)}
+                  className="px-2 py-0.5 text-xs font-medium rounded-lg border border-[#d1d1d6] bg-white text-[#6e6e73] hover:text-[#1d1d1f] hover:bg-[#f5f5f7] cursor-pointer"
                   title="Ver próximo dia"
                 >
-                  Próximo ▶
+                  Próximo dia ▶
                 </button>
               </div>
-            </div>
-          ) : (
-            <span className="text-xs text-[#86868b]">
-              Exibindo todos os <strong>{localEvents.length}</strong> eventos cadastrados
-            </span>
-          )}
+            )}
+          </div>
         </div>
 
         {/* Grid de Cards de Eventos */}
@@ -843,15 +1113,23 @@ Por favor, confirmem presença com antecedência! ✅`
                     <div className="space-y-2 text-xs text-[#6e6e73]">
                       <button
                         type="button"
-                        onClick={() => setSelectedDateFilter(evt.event_date)}
+                        onClick={() => {
+                          const datePart = evt.event_date ? evt.event_date.split('T')[0] : ''
+                          const parts = datePart.split('-')
+                          if (parts.length >= 2) {
+                            setSelectedYear(parts[0])
+                            setSelectedMonth(parts[1])
+                          }
+                          setSelectedDateFilter(datePart)
+                        }}
                         className="flex items-center gap-2 text-left hover:text-[#1d1d1f] hover:underline cursor-pointer transition-colors group/date"
-                        title="Clique para filtrar apenas os eventos deste dia"
+                        title="Clique para filtrar eventos deste dia"
                       >
                         <Calendar className="h-3.5 w-3.5 text-[#86868b] group-hover/date:text-[#b8860b]" />
                         <span>{new Date(evt.event_date + 'T00:00:00').toLocaleDateString('pt-BR')}</span>
-                        {selectedDateFilter === evt.event_date && (
+                        {selectedDateFilter === (evt.event_date ? evt.event_date.split('T')[0] : '') && (
                           <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-[#1d1d1f] text-white">
-                            Filtro ativo
+                            Dia filtrado
                           </span>
                         )}
                       </button>
@@ -1198,17 +1476,19 @@ Por favor, confirmem presença com antecedência! ✅`
               <p className="text-[#1d1d1f] font-medium text-sm">
                 {selectedDateFilter
                   ? `Nenhum evento agendado para ${new Date(selectedDateFilter + 'T00:00:00').toLocaleDateString('pt-BR')}`
+                  : hasActiveDateFilter
+                  ? `Nenhum evento encontrado para o período selecionado (${periodLabel})`
                   : 'Nenhum evento encontrado'}
               </p>
               <p className="text-xs text-[#86868b] mt-0.5">
-                {selectedDateFilter
-                  ? 'Esta data está totalmente livre na sua agenda!'
+                {hasActiveDateFilter
+                  ? 'Tente selecionar outro mês/ano ou limpar os filtros de data.'
                   : 'Cadastre orçamentos e datas para acompanhar o cronograma.'}
               </p>
               <div className="flex items-center justify-center gap-3 mt-3">
-                {selectedDateFilter && (
+                {hasActiveDateFilter && (
                   <button
-                    onClick={() => setSelectedDateFilter('')}
+                    onClick={handleClearDateFilters}
                     className="text-xs font-semibold text-[#0071e3] hover:underline cursor-pointer"
                   >
                     Ver todos os eventos
