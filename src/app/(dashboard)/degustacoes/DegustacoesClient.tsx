@@ -22,12 +22,15 @@ import {
   Check,
   Ban,
   RotateCcw,
+  Wallet,
+  TrendingUp,
 } from 'lucide-react'
 import {
   TastingItem,
   createTasting,
   updateTasting,
   updateTastingStatus,
+  toggleTastingPayment,
   deleteTasting,
 } from './actions'
 import { useConfirm } from '@/components/ConfirmDialog'
@@ -48,6 +51,7 @@ export function DegustacoesClient({
 
   const [searchTerm, setSearchTerm] = useState('')
   const [filterStatus, setFilterStatus] = useState<string>('all')
+  const [filterPayment, setFilterPayment] = useState<string>('all')
   const [selectedMonth, setSelectedMonth] = useState<string>('all')
   const [selectedYear, setSelectedYear] = useState<string>('all')
   const [selectedDateFilter, setSelectedDateFilter] = useState<string>('')
@@ -60,6 +64,7 @@ export function DegustacoesClient({
   const [modalAmount, setModalAmount] = useState('')
   const [modalPeopleCount, setModalPeopleCount] = useState('2')
   const [modalStatus, setModalStatus] = useState<'scheduled' | 'completed' | 'canceled'>('scheduled')
+  const [modalPaymentStatus, setModalPaymentStatus] = useState<'pending' | 'paid'>('pending')
 
   const [isPending, startTransition] = useTransition()
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null)
@@ -73,12 +78,14 @@ export function DegustacoesClient({
       setModalAmount(editingTasting.amount ? String(editingTasting.amount) : '')
       setModalPeopleCount(editingTasting.people_count ? String(editingTasting.people_count) : '2')
       setModalStatus(editingTasting.status || 'scheduled')
+      setModalPaymentStatus(editingTasting.payment_status || 'pending')
     } else {
       setModalTitle('')
       setModalDate(new Date().toISOString().split('T')[0])
       setModalAmount('')
       setModalPeopleCount('2')
       setModalStatus('scheduled')
+      setModalPaymentStatus('pending')
     }
   }, [editingTasting, isModalOpen])
 
@@ -241,6 +248,8 @@ export function DegustacoesClient({
   const filteredTastings = localTastings.filter((t) => {
     const matchesSearch = t.title.toLowerCase().includes(searchTerm.toLowerCase())
     const matchesStatus = filterStatus === 'all' || t.status === filterStatus
+    const matchesPayment =
+      filterPayment === 'all' || (t.payment_status || 'pending') === filterPayment
 
     const tDate = t.date ? t.date.split('T')[0] : ''
     const parts = tDate.split('-')
@@ -251,8 +260,17 @@ export function DegustacoesClient({
     const matchesMonth = selectedMonth === 'all' || tMonth === selectedMonth
     const matchesYear = selectedYear === 'all' || tYear === selectedYear
 
-    return matchesSearch && matchesStatus && matchesExactDate && matchesMonth && matchesYear
+    return matchesSearch && matchesStatus && matchesPayment && matchesExactDate && matchesMonth && matchesYear
   })
+
+  // Totais financeiros rápidos
+  const totalPaidInDegustacoes = localTastings
+    .filter((t) => (t.payment_status === 'paid'))
+    .reduce((acc, t) => acc + Number(t.amount || 0), 0)
+
+  const totalPendingInDegustacoes = localTastings
+    .filter((t) => (t.payment_status !== 'paid' && Number(t.amount || 0) > 0))
+    .reduce((acc, t) => acc + Number(t.amount || 0), 0)
 
   // Submit
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
@@ -274,7 +292,34 @@ export function DegustacoesClient({
     })
   }
 
-  // Alterar Status
+  // Alternar PAGO / PENDENTE (Sobe o Saldo da Conta!)
+  const handleTogglePayment = (id: string, currentPaymentStatus: 'pending' | 'paid') => {
+    const nextStatus = currentPaymentStatus === 'paid' ? 'pending' : 'paid'
+    const today = new Date().toISOString().split('T')[0]
+    setActionLoadingId(id)
+
+    // Atualização otimista imediata na tela
+    setLocalTastings((prev) =>
+      prev.map((t) =>
+        t.id === id
+          ? {
+              ...t,
+              payment_status: nextStatus,
+              paid_date: nextStatus === 'paid' ? today : null,
+            }
+          : t
+      )
+    )
+
+    startTransition(async () => {
+      const res = await toggleTastingPayment(id, currentPaymentStatus)
+      if (res?.error) alert(res.error)
+      setActionLoadingId(null)
+      router.refresh()
+    })
+  }
+
+  // Alterar Status Operacional
   const handleStatusChange = (id: string, newStatus: 'scheduled' | 'completed' | 'canceled') => {
     setActionLoadingId(id)
     setLocalTastings((prev) =>
@@ -290,7 +335,7 @@ export function DegustacoesClient({
 
   // Excluir
   const handleDelete = (id: string, title: string) => {
-    confirm(`Deseja realmente excluir a degustação "${title}"?`).then((ok) => {
+    confirm(`Deseja realmente excluir a degustação "${title}"? Se houver valor pago no saldo da conta, ele também será estornado.`).then((ok) => {
       if (!ok) return
       setActionLoadingId(id)
       setLocalTastings((prev) => prev.filter((t) => t.id !== id))
@@ -331,7 +376,7 @@ export function DegustacoesClient({
             Gestão de Degustações
           </h1>
           <p className="text-sm text-[#6e6e73]">
-            Agendamento e controle de degustações de cardápio para noivos e clientes.
+            Agendamento de degustações de cardápio com controle financeiro integrado ao saldo bancário.
           </p>
         </div>
         <div>
@@ -349,9 +394,63 @@ export function DegustacoesClient({
         </div>
       </div>
 
+      {/* Cards de Resumo Financeiro de Degustações */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="rounded-2xl border border-[#e5e5ea] bg-white p-4 shadow-xs flex items-center justify-between">
+          <div>
+            <span className="text-[11px] font-semibold text-[#86868b] uppercase tracking-wider block">
+              Recebido (No Saldo)
+            </span>
+            <span className="text-xl font-bold text-[#1a7f37] mt-0.5 block">
+              R$ {totalPaidInDegustacoes.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+            </span>
+            <span className="text-[10px] text-[#1a7f37] font-medium flex items-center gap-1 mt-0.5">
+              <CheckCircle2 size={11} /> Somado ao saldo bancário da empresa
+            </span>
+          </div>
+          <div className="h-10 w-10 rounded-xl bg-[#e8f8ee] text-[#1a7f37] flex items-center justify-center">
+            <Wallet size={20} />
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-[#e5e5ea] bg-white p-4 shadow-xs flex items-center justify-between">
+          <div>
+            <span className="text-[11px] font-semibold text-[#86868b] uppercase tracking-wider block">
+              Pendente a Receber
+            </span>
+            <span className="text-xl font-bold text-[#b8860b] mt-0.5 block">
+              R$ {totalPendingInDegustacoes.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+            </span>
+            <span className="text-[10px] text-[#86868b] mt-0.5 block">
+              Aguardando pagamento do cliente
+            </span>
+          </div>
+          <div className="h-10 w-10 rounded-xl bg-[#fff8e6] text-[#b8860b] flex items-center justify-center">
+            <Clock size={20} />
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-[#e5e5ea] bg-white p-4 shadow-xs flex items-center justify-between sm:col-span-2 lg:col-span-1">
+          <div>
+            <span className="text-[11px] font-semibold text-[#86868b] uppercase tracking-wider block">
+              Total de Degustações
+            </span>
+            <span className="text-xl font-bold text-[#1d1d1f] mt-0.5 block">
+              {localTastings.length}
+            </span>
+            <span className="text-[10px] text-[#86868b] mt-0.5 block">
+              {localTastings.filter((t) => t.status === 'completed').length} já realizadas
+            </span>
+          </div>
+          <div className="h-10 w-10 rounded-xl bg-[#f5f5f7] text-[#1d1d1f] flex items-center justify-center">
+            <UtensilsCrossed size={20} />
+          </div>
+        </div>
+      </div>
+
       {/* Container Principal */}
       <div className="rounded-2xl border border-[#e5e5ea] bg-white shadow-xs p-6">
-        {/* Barra de Busca e Filtro de Status */}
+        {/* Barra de Busca e Filtros */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-3">
           <div className="relative w-full max-w-sm">
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-[#86868b]" />
@@ -364,25 +463,62 @@ export function DegustacoesClient({
             />
           </div>
 
-          <div className="flex items-center gap-1.5 bg-[#f5f5f7] p-1 rounded-xl overflow-x-auto">
-            {[
-              { label: 'Todas', val: 'all' },
-              { label: 'Agendadas', val: 'scheduled' },
-              { label: 'Realizadas', val: 'completed' },
-              { label: 'Canceladas', val: 'canceled' },
-            ].map((tab) => (
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Filtro de Pagamento */}
+            <div className="flex items-center gap-1 bg-[#f5f5f7] p-1 rounded-xl">
               <button
-                key={tab.val}
-                onClick={() => setFilterStatus(tab.val)}
-                className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all whitespace-nowrap cursor-pointer ${
-                  filterStatus === tab.val
+                onClick={() => setFilterPayment('all')}
+                className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+                  filterPayment === 'all'
                     ? 'bg-white text-[#1d1d1f] shadow-xs'
                     : 'text-[#6e6e73] hover:text-[#1d1d1f]'
                 }`}
               >
-                {tab.label}
+                Todos Pagamentos
               </button>
-            ))}
+              <button
+                onClick={() => setFilterPayment('paid')}
+                className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+                  filterPayment === 'paid'
+                    ? 'bg-[#1a7f37] text-white shadow-xs'
+                    : 'text-[#6e6e73] hover:text-[#1a7f37]'
+                }`}
+              >
+                Pagos
+              </button>
+              <button
+                onClick={() => setFilterPayment('pending')}
+                className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+                  filterPayment === 'pending'
+                    ? 'bg-[#b8860b] text-white shadow-xs'
+                    : 'text-[#6e6e73] hover:text-[#b8860b]'
+                }`}
+              >
+                Pendentes
+              </button>
+            </div>
+
+            {/* Filtro de Status Operacional */}
+            <div className="flex items-center gap-1 bg-[#f5f5f7] p-1 rounded-xl">
+              {[
+                { label: 'Todas', val: 'all' },
+                { label: 'Agendadas', val: 'scheduled' },
+                { label: 'Realizadas', val: 'completed' },
+                { label: 'Canceladas', val: 'canceled' },
+              ].map((tab) => (
+                <button
+                  key={tab.val}
+                  onClick={() => setFilterStatus(tab.val)}
+                  className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-all whitespace-nowrap cursor-pointer ${
+                    filterStatus === tab.val
+                      ? 'bg-white text-[#1d1d1f] shadow-xs'
+                      : 'text-[#6e6e73] hover:text-[#1d1d1f]'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
@@ -593,13 +729,16 @@ export function DegustacoesClient({
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
           {filteredTastings.length > 0 ? (
             filteredTastings.map((tasting) => {
+              const isPaid = tasting.payment_status === 'paid'
+              const amountNum = Number(tasting.amount || 0)
+
               return (
                 <div
                   key={tasting.id}
                   className="group rounded-2xl border border-[#e5e5ea] bg-white p-5 hover:border-[#1d1d1f]/30 hover:shadow-xs transition-all flex flex-col justify-between"
                 >
                   <div>
-                    {/* Cabeçalho do Card: Nome e Status */}
+                    {/* Cabeçalho do Card: Nome e Status Operacional */}
                     <div className="flex justify-between items-start mb-3.5 gap-2">
                       <h3 className="font-semibold text-base text-[#1d1d1f] group-hover:text-[#b8860b] transition-colors leading-snug">
                         {tasting.title}
@@ -622,7 +761,7 @@ export function DegustacoesClient({
                     </div>
 
                     {/* Informações: Data e Quantidade de Pessoas */}
-                    <div className="space-y-2 text-xs text-[#6e6e73]">
+                    <div className="space-y-2.5 text-xs text-[#6e6e73]">
                       <button
                         type="button"
                         onClick={() => {
@@ -654,28 +793,72 @@ export function DegustacoesClient({
                         </span>
                       </p>
 
-                      {/* Bloco de Valor */}
-                      <div className="pt-2">
-                        <div className="flex items-center justify-between p-2.5 rounded-xl bg-[#f8fafc] border border-[#e2e8f0]">
-                          <span className="text-xs text-[#64748b] font-medium flex items-center gap-1">
-                            <DollarSign size={14} className="text-[#1a7f37]" />
-                            Valor da Degustação:
-                          </span>
-                          <span className="font-bold text-xs text-[#1d1d1f]">
-                            {Number(tasting.amount) > 0 ? (
-                              `R$ ${Number(tasting.amount).toLocaleString('pt-BR', {
-                                minimumFractionDigits: 2,
-                              })}`
-                            ) : (
-                              <span className="text-[#1a7f37]">Gratuita / Cortesia</span>
-                            )}
-                          </span>
+                      {/* Bloco de Valor e BOTÃO DE PAGO / PENDENTE */}
+                      <div className="pt-1.5">
+                        <div className="p-3 rounded-2xl bg-[#f8fafc] border border-[#e2e8f0] space-y-2.5">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs text-[#64748b] font-medium flex items-center gap-1">
+                              <DollarSign size={14} className="text-[#1a7f37]" />
+                              Valor da Degustação:
+                            </span>
+                            <span className="font-bold text-sm text-[#1d1d1f]">
+                              {amountNum > 0 ? (
+                                `R$ ${amountNum.toLocaleString('pt-BR', {
+                                  minimumFractionDigits: 2,
+                                })}`
+                              ) : (
+                                <span className="text-[#1a7f37] text-xs font-semibold">
+                                  Gratuita / Cortesia
+                                </span>
+                              )}
+                            </span>
+                          </div>
+
+                          {/* Botão de PAGO e PENDENTE que sobe o saldo da conta */}
+                          {amountNum > 0 && (
+                            <div className="flex items-center justify-between pt-2 border-t border-[#edf2f7]">
+                              <span className="text-[11px] font-medium text-[#64748b]">
+                                Saldo da Conta:
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleTogglePayment(tasting.id, tasting.payment_status || 'pending')
+                                }
+                                disabled={actionLoadingId === tasting.id}
+                                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer shadow-2xs group/btn ${
+                                  isPaid
+                                    ? 'bg-[#e8f8ee] text-[#1a7f37] border border-[#1a7f37]/30 hover:bg-[#feeceb] hover:text-[#cf222e] hover:border-[#cf222e]/30'
+                                    : 'bg-[#fff8e6] text-[#b8860b] border border-[#b8860b]/30 hover:bg-[#1a7f37] hover:text-white hover:border-[#1a7f37]'
+                                }`}
+                                title={
+                                  isPaid
+                                    ? 'Valor computado no saldo da conta. Clique para desfazer e marcar como Pendente'
+                                    : 'Clique para marcar como PAGO e subir o saldo da conta imediatamente'
+                                }
+                              >
+                                {isPaid ? (
+                                  <>
+                                    <CheckCircle2 size={13} className="shrink-0 group-hover/btn:hidden" />
+                                    <RotateCcw size={13} className="shrink-0 hidden group-hover/btn:inline" />
+                                    <span className="group-hover/btn:hidden">✓ Pago (No Saldo)</span>
+                                    <span className="hidden group-hover/btn:inline">Desfazer</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Clock size={13} className="shrink-0" />
+                                    <span>Pendente • Marcar Pago</span>
+                                  </>
+                                )}
+                              </button>
+                            </div>
+                          )}
                         </div>
                       </div>
                     </div>
                   </div>
 
-                  {/* Rodapé: Ações e Mudança Rápida de Status */}
+                  {/* Rodapé: Ações e Mudança Rápida de Status Operacional */}
                   <div className="mt-5 pt-3.5 border-t border-[#f2f2f7] flex items-center justify-between gap-2">
                     <div className="flex items-center gap-1">
                       {tasting.status !== 'completed' ? (
@@ -873,9 +1056,45 @@ export function DegustacoesClient({
                 </div>
               </div>
 
-              {/* Status */}
+              {/* Pagamento: PAGO ou PENDENTE */}
               <div>
-                <label className="block text-xs font-semibold text-[#1d1d1f] mb-1.5">Status</label>
+                <label className="block text-xs font-semibold text-[#1d1d1f] mb-1.5">
+                  Status do Pagamento (Saldo da Conta)
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setModalPaymentStatus('pending')}
+                    className={`px-3 py-2 text-xs font-semibold rounded-xl border transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                      modalPaymentStatus === 'pending'
+                        ? 'bg-[#fff8e6] text-[#b8860b] border-[#b8860b]'
+                        : 'bg-white text-[#6e6e73] border-[#d1d1d6] hover:text-[#1d1d1f]'
+                    }`}
+                  >
+                    <Clock size={14} />
+                    <span>Pendente</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setModalPaymentStatus('paid')}
+                    className={`px-3 py-2 text-xs font-semibold rounded-xl border transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                      modalPaymentStatus === 'paid'
+                        ? 'bg-[#e8f8ee] text-[#1a7f37] border-[#1a7f37]'
+                        : 'bg-white text-[#6e6e73] border-[#d1d1d6] hover:text-[#1d1d1f]'
+                    }`}
+                  >
+                    <CheckCircle2 size={14} />
+                    <span>Pago (Subir no Saldo)</span>
+                  </button>
+                </div>
+                <input type="hidden" name="payment_status" value={modalPaymentStatus} />
+              </div>
+
+              {/* Status Operacional */}
+              <div>
+                <label className="block text-xs font-semibold text-[#1d1d1f] mb-1.5">
+                  Status Operacional
+                </label>
                 <select
                   name="status"
                   value={modalStatus}

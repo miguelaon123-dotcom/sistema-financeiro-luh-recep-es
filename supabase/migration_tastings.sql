@@ -5,20 +5,28 @@
 -- ==============================================================================
 
 CREATE TABLE IF NOT EXISTS public.tastings (
-  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  title         TEXT NOT NULL,
-  date          DATE NOT NULL,
-  amount        DECIMAL(12,2) DEFAULT 0.00,
-  people_count  INTEGER DEFAULT 1,
-  status        TEXT CHECK (status IN ('scheduled', 'completed', 'canceled')) DEFAULT 'scheduled',
-  created_by    UUID REFERENCES public.users(id) ON DELETE SET NULL,
-  created_at    TIMESTAMPTZ DEFAULT NOW(),
-  updated_at    TIMESTAMPTZ DEFAULT NOW()
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  title           TEXT NOT NULL,
+  date            DATE NOT NULL,
+  amount          DECIMAL(12,2) DEFAULT 0.00,
+  people_count    INTEGER DEFAULT 1,
+  status          TEXT CHECK (status IN ('scheduled', 'completed', 'canceled')) DEFAULT 'scheduled',
+  payment_status  TEXT CHECK (payment_status IN ('pending', 'paid')) DEFAULT 'pending',
+  paid_date       DATE,
+  created_by      UUID REFERENCES public.users(id) ON DELETE SET NULL,
+  created_at      TIMESTAMPTZ DEFAULT NOW(),
+  updated_at      TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Adicionar colunas caso a tabela já tenha sido criada anteriormente
+ALTER TABLE public.tastings 
+ADD COLUMN IF NOT EXISTS payment_status TEXT CHECK (payment_status IN ('pending', 'paid')) DEFAULT 'pending',
+ADD COLUMN IF NOT EXISTS paid_date DATE;
 
 -- Índices de consulta rápida
 CREATE INDEX IF NOT EXISTS idx_tastings_date ON public.tastings(date);
 CREATE INDEX IF NOT EXISTS idx_tastings_status ON public.tastings(status);
+CREATE INDEX IF NOT EXISTS idx_tastings_payment_status ON public.tastings(payment_status);
 
 -- Habilitar RLS
 ALTER TABLE public.tastings ENABLE ROW LEVEL SECURITY;
