@@ -16,6 +16,7 @@ import {
   ChevronLeft,
   ChevronRight,
   LogOut,
+  UtensilsCrossed,
 } from 'lucide-react'
 
 const navigation = [
@@ -24,6 +25,7 @@ const navigation = [
   { name: 'Estoque', href: '/estoque', icon: Package },
   { name: 'Locações', href: '/locacoes', icon: ClipboardList },
   { name: 'Eventos', href: '/eventos', icon: CalendarDays },
+  { name: 'Degustações', href: '/degustacoes', icon: UtensilsCrossed },
   { name: 'Fornecedores', href: '/fornecedores', icon: Truck },
   { name: 'Funcionários', href: '/funcionarios', icon: UserCheck },
   { name: 'Configurações', href: '/configuracoes', icon: Settings },

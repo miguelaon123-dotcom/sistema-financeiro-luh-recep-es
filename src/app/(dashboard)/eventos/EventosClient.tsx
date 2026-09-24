@@ -2,6 +2,7 @@
 
 import { useState, useTransition, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import {
   Plus,
   Search,
@@ -34,6 +35,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Filter,
+  CalendarDays,
+  UtensilsCrossed,
 } from 'lucide-react'
 import {
   createEvent,
@@ -802,6 +805,25 @@ Por favor, confirmem presença com antecedência! ✅`
   return (
     <div className="space-y-6">
       <ConfirmDialog />
+
+      {/* Abas Superiores Integradas: Eventos e Degustações */}
+      <div className="flex items-center gap-2 border-b border-[#e5e5ea] pb-3">
+        <Link
+          href="/eventos"
+          className="px-4 py-2 text-sm font-semibold rounded-xl bg-[#1d1d1f] text-white shadow-xs transition-all flex items-center gap-2 cursor-pointer"
+        >
+          <CalendarDays size={16} />
+          <span>Eventos & Festas</span>
+        </Link>
+        <Link
+          href="/degustacoes"
+          className="px-4 py-2 text-sm font-semibold rounded-xl text-[#6e6e73] hover:text-[#1d1d1f] hover:bg-[#f5f5f7] transition-all flex items-center gap-2 cursor-pointer"
+        >
+          <UtensilsCrossed size={16} />
+          <span>Degustações</span>
+        </Link>
+      </div>
+
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
