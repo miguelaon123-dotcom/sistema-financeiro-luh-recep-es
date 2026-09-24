@@ -3,8 +3,8 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   experimental: {
     staleTimes: {
-      dynamic: 300, // 5 minutos de cache instantâneo no navegador para navegação zero-delay
-      static: 300,
+      dynamic: 0, // Sem cache antigo no navegador: reflete dados financeiros instantaneamente
+      static: 30,
     },
   },
 };

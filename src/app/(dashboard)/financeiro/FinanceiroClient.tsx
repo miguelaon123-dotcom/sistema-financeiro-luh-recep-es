@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition, useEffect } from 'react'
+import { useState, useTransition, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   ArrowUpCircle,
@@ -20,6 +20,10 @@ import {
   Landmark,
   Info,
   Check,
+  UtensilsCrossed,
+  Clock,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react'
 import {
   createTransaction,
@@ -71,6 +75,8 @@ export function FinanceiroClient({
   )
   const [searchTerm, setSearchTerm] = useState('')
   const [filterStatus, setFilterStatus] = useState<string>('all')
+  const [selectedMonth, setSelectedMonth] = useState<string>('all')
+  const [selectedYear, setSelectedYear] = useState<string>('all')
   const [modalType, setModalType] = useState<'income' | 'expense' | null>(
     initialAction === 'nova-receita'
       ? 'income'
@@ -89,6 +95,50 @@ export function FinanceiroClient({
   const [targetBalanceInput, setTargetBalanceInput] = useState('')
   const [adjustNotes, setAdjustNotes] = useState('')
   const [adjustError, setAdjustError] = useState<string | null>(null)
+
+  // Meses e Anos para Filtros de Período
+  const MONTH_NAMES = [
+    { value: '01', label: 'Janeiro' },
+    { value: '02', label: 'Fevereiro' },
+    { value: '03', label: 'Março' },
+    { value: '04', label: 'Abril' },
+    { value: '05', label: 'Maio' },
+    { value: '06', label: 'Junho' },
+    { value: '07', label: 'Julho' },
+    { value: '08', label: 'Agosto' },
+    { value: '09', label: 'Setembro' },
+    { value: '10', label: 'Outubro' },
+    { value: '11', label: 'Novembro' },
+    { value: '12', label: 'Dezembro' },
+  ]
+
+  const availableYears = useMemo(() => {
+    const currentY = new Date().getFullYear()
+    const yearsSet = new Set<string>()
+    yearsSet.add(String(currentY))
+    yearsSet.add(String(currentY - 1))
+    yearsSet.add(String(currentY + 1))
+    localTransactions.forEach((tx) => {
+      const d = (tx.status === 'paid' && tx.paid_date ? tx.paid_date : tx.due_date) || ''
+      if (d) {
+        const y = d.split('-')[0]
+        if (y && !isNaN(Number(y)) && y.length === 4) yearsSet.add(y)
+      }
+    })
+    return Array.from(yearsSet).sort()
+  }, [localTransactions])
+
+  const now = new Date()
+  const currentYearStr = String(now.getFullYear())
+  const currentMonthStr = String(now.getMonth() + 1).padStart(2, '0')
+  const nextMonthDate = new Date(now.getFullYear(), now.getMonth() + 1, 1)
+  const nextMonthYearStr = String(nextMonthDate.getFullYear())
+  const nextMonthStr = String(nextMonthDate.getMonth() + 1).padStart(2, '0')
+
+  const isCurrentMonthSelected =
+    selectedMonth === currentMonthStr && selectedYear === currentYearStr
+  const isNextMonthSelected =
+    selectedMonth === nextMonthStr && selectedYear === nextMonthYearStr
 
   // Cálculos dinâmicos
   const pendingIncome = localTransactions
@@ -111,22 +161,40 @@ export function FinanceiroClient({
   const totalInCaixinhas = (caixinhas || []).reduce((acc, c) => acc + Number(c.current_balance || 0), 0)
   const freeCashBalance = Math.max(0, cashBalance - totalInCaixinhas)
 
-  // Filtragem
-  const filteredTransactions = localTransactions.filter((tx) => {
-    const matchesSearch =
-      tx.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      tx.contacts?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      tx.events?.title?.toLowerCase().includes(searchTerm.toLowerCase())
+  // Filtragem e Ordenação Inteligente
+  const filteredTransactions = useMemo(() => {
+    return localTransactions
+      .filter((tx) => {
+        const matchesSearch =
+          tx.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          tx.contacts?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          tx.events?.title?.toLowerCase().includes(searchTerm.toLowerCase())
 
-    if (!matchesSearch) return false
+        if (!matchesSearch) return false
 
-    if (filterStatus === 'all') return true
-    if (filterStatus === 'income') return tx.type === 'income'
-    if (filterStatus === 'expense') return tx.type === 'expense'
-    if (filterStatus === 'pending') return tx.status === 'pending'
-    if (filterStatus === 'paid') return tx.status === 'paid'
-    return true
-  })
+        // Filtro por Mês e Ano
+        const effectiveDate = (tx.status === 'paid' && tx.paid_date ? tx.paid_date : tx.due_date) || ''
+        const parts = effectiveDate.split('-')
+        const txYear = parts[0]
+        const txMonth = parts[1]
+
+        if (selectedMonth !== 'all' && txMonth !== selectedMonth) return false
+        if (selectedYear !== 'all' && txYear !== selectedYear) return false
+
+        if (filterStatus === 'all') return true
+        if (filterStatus === 'income') return tx.type === 'income'
+        if (filterStatus === 'expense') return tx.type === 'expense'
+        if (filterStatus === 'tasting') return tx.description?.toLowerCase().includes('degustação')
+        if (filterStatus === 'pending') return tx.status === 'pending'
+        if (filterStatus === 'paid') return tx.status === 'paid'
+        return true
+      })
+      .sort((a, b) => {
+        const dateA = (a.status === 'paid' && a.paid_date ? a.paid_date : a.due_date) || ''
+        const dateB = (b.status === 'paid' && b.paid_date ? b.paid_date : b.due_date) || ''
+        return dateB.localeCompare(dateA)
+      })
+  }, [localTransactions, searchTerm, filterStatus, selectedMonth, selectedYear])
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
@@ -397,7 +465,7 @@ export function FinanceiroClient({
               type="text"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Buscar por descrição, cliente ou evento..."
+              placeholder="Buscar por descrição, cliente, evento ou degustação..."
               className="w-full rounded-xl border border-transparent bg-[#f5f5f7] py-2 pl-10 pr-3.5 text-sm text-[#1d1d1f] placeholder-[#86868b] focus:border-[#d1d1d6] focus:bg-white focus:outline-none transition-all"
             />
           </div>
@@ -408,6 +476,7 @@ export function FinanceiroClient({
               { label: 'Todos', val: 'all' },
               { label: 'Receitas', val: 'income' },
               { label: 'Despesas', val: 'expense' },
+              { label: '🍽️ Degustações', val: 'tasting' },
               { label: 'Pendentes', val: 'pending' },
               { label: 'Pagos', val: 'paid' },
             ].map((tab) => (
@@ -424,6 +493,89 @@ export function FinanceiroClient({
               </button>
             ))}
           </div>
+        </div>
+
+        {/* Barra de Filtros de Período (Mês e Ano) */}
+        <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 bg-[#fbfbfd] border-b border-[#f2f2f7]">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs font-semibold text-[#1d1d1f] flex items-center gap-1">
+              <Calendar className="h-3.5 w-3.5 text-[#b8860b]" />
+              Período:
+            </span>
+
+            <select
+              value={selectedMonth}
+              onChange={(e) => setSelectedMonth(e.target.value)}
+              className="rounded-lg border border-[#d1d1d6] bg-white px-2.5 py-1 text-xs text-[#1d1d1f] font-medium focus:outline-none cursor-pointer"
+            >
+              <option value="all">Todos os Meses</option>
+              {MONTH_NAMES.map((m) => (
+                <option key={m.value} value={m.value}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
+
+            <select
+              value={selectedYear}
+              onChange={(e) => setSelectedYear(e.target.value)}
+              className="rounded-lg border border-[#d1d1d6] bg-white px-2.5 py-1 text-xs text-[#1d1d1f] font-medium focus:outline-none cursor-pointer"
+            >
+              <option value="all">Todos os Anos</option>
+              {availableYears.map((yr) => (
+                <option key={yr} value={yr}>
+                  {yr}
+                </option>
+              ))}
+            </select>
+
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedMonth(currentMonthStr)
+                setSelectedYear(currentYearStr)
+              }}
+              className={`px-2.5 py-1 text-xs font-semibold rounded-lg border transition-all cursor-pointer ${
+                isCurrentMonthSelected
+                  ? 'bg-[#1d1d1f] text-white border-[#1d1d1f]'
+                  : 'bg-white text-[#6e6e73] border-[#d1d1d6] hover:text-[#1d1d1f]'
+              }`}
+            >
+              Este Mês
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedMonth(nextMonthStr)
+                setSelectedYear(nextMonthYearStr)
+              }}
+              className={`px-2.5 py-1 text-xs font-semibold rounded-lg border transition-all cursor-pointer ${
+                isNextMonthSelected
+                  ? 'bg-[#1d1d1f] text-white border-[#1d1d1f]'
+                  : 'bg-white text-[#6e6e73] border-[#d1d1d6] hover:text-[#1d1d1f]'
+              }`}
+            >
+              Próximo Mês
+            </button>
+
+            {(selectedMonth !== 'all' || selectedYear !== 'all') && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedMonth('all')
+                  setSelectedYear('all')
+                }}
+                className="px-2 py-1 text-xs font-medium text-[#cf222e] hover:bg-[#feeceb] rounded-lg transition-all cursor-pointer"
+              >
+                Limpar Período
+              </button>
+            )}
+          </div>
+
+          <span className="text-xs text-[#86868b]">
+            Exibindo <strong>{filteredTransactions.length}</strong> de {localTransactions.length} lançamentos
+          </span>
         </div>
 
         <div className="overflow-x-auto">
@@ -444,7 +596,21 @@ export function FinanceiroClient({
                 filteredTransactions.map((tx) => (
                   <tr key={tx.id} className="hover:bg-[#fbfbfd] transition-colors">
                     <td className="px-5 py-3.5 whitespace-nowrap text-[#6e6e73]">
-                      {new Date(tx.due_date + 'T00:00:00').toLocaleDateString('pt-BR')}
+                      {tx.status === 'paid' && tx.paid_date ? (
+                        <div className="flex flex-col">
+                          <span className="font-semibold text-xs text-[#1d1d1f]">
+                            {new Date(tx.paid_date + 'T00:00:00').toLocaleDateString('pt-BR')}
+                          </span>
+                          <span className="text-[10px] text-[#1a7f37] font-medium">Pago</span>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col">
+                          <span className="font-medium text-xs text-[#6e6e73]">
+                            {new Date(tx.due_date + 'T00:00:00').toLocaleDateString('pt-BR')}
+                          </span>
+                          <span className="text-[10px] text-[#b8860b]">Vencimento</span>
+                        </div>
+                      )}
                     </td>
                     <td className="px-5 py-3.5 font-medium text-[#1d1d1f]">
                       {tx.description ? tx.description.replace(/\s*\[[0-9a-fA-F-]+\]/, '') : 'Sem descrição'}
