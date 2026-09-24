@@ -9,7 +9,7 @@ interface CacheEntry<T> {
 }
 
 const memoryCache = new Map<string, CacheEntry<any>>()
-const DEFAULT_TTL = 10 * 60 * 1000 // 10 minutos (dados instantâneos da memória, sempre atualizados via invalidateCache)
+const DEFAULT_TTL = 3 * 1000 // 3 segundos (garante resposta ultra-rápida sem reter dados antigos)
 
 export async function getCachedData<T>(
   key: string,

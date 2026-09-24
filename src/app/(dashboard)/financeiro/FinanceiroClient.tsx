@@ -447,11 +447,19 @@ export function FinanceiroClient({
                       {new Date(tx.due_date + 'T00:00:00').toLocaleDateString('pt-BR')}
                     </td>
                     <td className="px-5 py-3.5 font-medium text-[#1d1d1f]">
-                      {tx.description || 'Sem descrição'}
+                      {tx.description ? tx.description.replace(/\s*\[[0-9a-fA-F-]+\]/, '') : 'Sem descrição'}
                     </td>
                     <td className="px-5 py-3.5 text-[#6e6e73]">{tx.contacts?.name || '—'}</td>
                     <td className="px-5 py-3.5 text-[#1d1d1f] font-medium">
-                      {tx.events?.title || '—'}
+                      {tx.events?.title ? (
+                        tx.events.title
+                      ) : tx.description?.toLowerCase().includes('degustação') ? (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-[#ebf4fe] text-[#0071e3]">
+                          🍽️ Degustação
+                        </span>
+                      ) : (
+                        '—'
+                      )}
                     </td>
                     <td
                       className={`px-5 py-3.5 text-right font-semibold whitespace-nowrap ${

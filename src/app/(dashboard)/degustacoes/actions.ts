@@ -53,17 +53,18 @@ async function syncFinancialTransaction(
 
     const existingTx = existingTxs && existingTxs.length > 0 ? existingTxs[0] : null
 
-    if (amount > 0) {
-      const isPaid = paymentStatus === 'paid'
-      const finalPaidDate = isPaid ? (paidDate || today) : null
+    const isPaid = paymentStatus === 'paid'
+    const finalPaidDate = isPaid ? (paidDate || today) : null
+    const finalDueDate = isPaid ? (finalPaidDate || today) : date
 
+    if (amount > 0) {
       if (existingTx) {
         await supabase
           .from('financial_transactions')
           .update({
             amount,
             description: `Degustação: ${title} ${tag}`,
-            due_date: date,
+            due_date: finalDueDate,
             status: isPaid ? 'paid' : 'pending',
             paid_date: finalPaidDate,
           })
@@ -73,15 +74,13 @@ async function syncFinancialTransaction(
           type: 'income',
           amount,
           description: `Degustação: ${title} ${tag}`,
-          due_date: date,
+          due_date: finalDueDate,
           status: isPaid ? 'paid' : 'pending',
           paid_date: finalPaidDate,
-          created_by: userId || null,
         }
-        const res = await supabase.from('financial_transactions').insert(payload)
-        if (res.error && (res.error.code === 'PGRST204' || res.error.message?.includes('created_by'))) {
-          delete payload.created_by
-          await supabase.from('financial_transactions').insert(payload)
+        let res = await supabase.from('financial_transactions').insert(payload)
+        if (res.error) {
+          console.error('Erro ao inserir receita da degustação no financeiro:', res.error)
         }
       }
     } else if (existingTx) {
