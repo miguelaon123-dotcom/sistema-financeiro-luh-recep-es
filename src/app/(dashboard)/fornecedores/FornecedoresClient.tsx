@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState, useTransition, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   Truck,
@@ -24,6 +24,8 @@ import {
   AlertCircle,
   ExternalLink,
   MessageCircle,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react'
 import {
   createSupplier,
@@ -84,6 +86,11 @@ export function FornecedoresClient({
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'paid'>('all')
   const [supplierFilter, setSupplierFilter] = useState<string>('all')
 
+  // Filtros de Período (Mês, Ano e Dia)
+  const [selectedMonth, setSelectedMonth] = useState<string>('all')
+  const [selectedYear, setSelectedYear] = useState<string>('all')
+  const [selectedDateFilter, setSelectedDateFilter] = useState<string>('')
+
   // Modais
   const [supplierModalOpen, setSupplierModalOpen] = useState(initialAction === 'novo-fornecedor')
   const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null)
@@ -122,6 +129,162 @@ export function FornecedoresClient({
   const coveragePercent = totalPendingAmount > 0 ? Math.min(100, Math.round((caixinhaBalance / totalPendingAmount) * 100)) : 100
   const isFullyCovered = caixinhaBalance >= totalPendingAmount && totalPendingAmount > 0
 
+  // Lista de Meses
+  const MONTH_NAMES = [
+    { value: '01', label: 'Janeiro' },
+    { value: '02', label: 'Fevereiro' },
+    { value: '03', label: 'Março' },
+    { value: '04', label: 'Abril' },
+    { value: '05', label: 'Maio' },
+    { value: '06', label: 'Junho' },
+    { value: '07', label: 'Julho' },
+    { value: '08', label: 'Agosto' },
+    { value: '09', label: 'Setembro' },
+    { value: '10', label: 'Outubro' },
+    { value: '11', label: 'Novembro' },
+    { value: '12', label: 'Dezembro' },
+  ]
+
+  // Anos disponíveis dinamicamente com base nas contas
+  const availableYears = useMemo(() => {
+    const currentY = new Date().getFullYear()
+    const yearsSet = new Set<string>()
+    yearsSet.add(String(currentY))
+    yearsSet.add(String(currentY - 1))
+    yearsSet.add(String(currentY + 1))
+
+    supplierTxs.forEach((t) => {
+      const d = t.due_date || t.paid_date
+      if (d) {
+        const y = d.split('T')[0].split('-')[0]
+        if (y && !isNaN(Number(y)) && y.length === 4) {
+          yearsSet.add(y)
+        }
+      }
+    })
+
+    return Array.from(yearsSet).sort()
+  }, [supplierTxs])
+
+  const now = new Date()
+  const todayStr = now.toISOString().split('T')[0]
+  const tomorrowObj = new Date()
+  tomorrowObj.setDate(tomorrowObj.getDate() + 1)
+  const tomorrowStr = tomorrowObj.toISOString().split('T')[0]
+
+  const currentYearStr = String(now.getFullYear())
+  const currentMonthStr = String(now.getMonth() + 1).padStart(2, '0')
+
+  const nextMonthDate = new Date(now.getFullYear(), now.getMonth() + 1, 1)
+  const nextMonthYearStr = String(nextMonthDate.getFullYear())
+  const nextMonthStr = String(nextMonthDate.getMonth() + 1).padStart(2, '0')
+
+  const isCurrentMonthSelected =
+    !selectedDateFilter &&
+    selectedMonth === currentMonthStr &&
+    selectedYear === currentYearStr
+
+  const isNextMonthSelected =
+    !selectedDateFilter &&
+    selectedMonth === nextMonthStr &&
+    selectedYear === nextMonthYearStr
+
+  const hasActiveDateFilter =
+    Boolean(selectedDateFilter) || selectedMonth !== 'all' || selectedYear !== 'all'
+
+  // Manipuladores de Filtros de Período
+  const handleMonthChange = (month: string) => {
+    setSelectedMonth(month)
+    if (selectedDateFilter) setSelectedDateFilter('')
+  }
+
+  const handleYearChange = (year: string) => {
+    setSelectedYear(year)
+    if (selectedDateFilter) setSelectedDateFilter('')
+  }
+
+  const handleSelectCurrentMonth = () => {
+    setSelectedYear(currentYearStr)
+    setSelectedMonth(currentMonthStr)
+    setSelectedDateFilter('')
+  }
+
+  const handleSelectNextMonth = () => {
+    setSelectedYear(nextMonthYearStr)
+    setSelectedMonth(nextMonthStr)
+    setSelectedDateFilter('')
+  }
+
+  const handleNavigateMonth = (direction: -1 | 1) => {
+    const yr = selectedYear !== 'all' ? parseInt(selectedYear, 10) : now.getFullYear()
+    const mo = selectedMonth !== 'all' ? parseInt(selectedMonth, 10) - 1 : now.getMonth()
+    const target = new Date(yr, mo + direction, 1)
+    setSelectedYear(String(target.getFullYear()))
+    setSelectedMonth(String(target.getMonth() + 1).padStart(2, '0'))
+    setSelectedDateFilter('')
+  }
+
+  const handleDayChange = (val: string) => {
+    setSelectedDateFilter(val)
+    if (val) {
+      const parts = val.split('-')
+      if (parts.length >= 2) {
+        setSelectedYear(parts[0])
+        setSelectedMonth(parts[1])
+      }
+    }
+  }
+
+  const handleSelectToday = () => {
+    setSelectedDateFilter(todayStr)
+    const parts = todayStr.split('-')
+    setSelectedYear(parts[0])
+    setSelectedMonth(parts[1])
+  }
+
+  const handleSelectTomorrow = () => {
+    setSelectedDateFilter(tomorrowStr)
+    const parts = tomorrowStr.split('-')
+    setSelectedYear(parts[0])
+    setSelectedMonth(parts[1])
+  }
+
+  const handleNavigateDay = (direction: -1 | 1) => {
+    if (!selectedDateFilter) return
+    const d = new Date(selectedDateFilter + 'T00:00:00')
+    d.setDate(d.getDate() + direction)
+    const newStr = d.toISOString().split('T')[0]
+    handleDayChange(newStr)
+  }
+
+  const handleClearDayOnly = () => {
+    setSelectedDateFilter('')
+  }
+
+  const handleClearDateFilters = () => {
+    setSelectedDateFilter('')
+    setSelectedMonth('all')
+    setSelectedYear('all')
+  }
+
+  const periodLabel = useMemo(() => {
+    if (selectedDateFilter) {
+      return `em ${new Date(selectedDateFilter + 'T00:00:00').toLocaleDateString('pt-BR')}`
+    }
+    if (selectedMonth !== 'all' && selectedYear !== 'all') {
+      const mName = MONTH_NAMES.find((m) => m.value === selectedMonth)?.label
+      return `em ${mName} de ${selectedYear}`
+    }
+    if (selectedMonth !== 'all' && selectedYear === 'all') {
+      const mName = MONTH_NAMES.find((m) => m.value === selectedMonth)?.label
+      return `em ${mName}`
+    }
+    if (selectedMonth === 'all' && selectedYear !== 'all') {
+      return `em ${selectedYear}`
+    }
+    return 'no total'
+  }, [selectedDateFilter, selectedMonth, selectedYear])
+
   // Filtragem da tabela de contas
   const filteredBills = supplierTxs.filter((tx) => {
     const matchesSearch =
@@ -135,8 +298,23 @@ export function FornecedoresClient({
     if (statusFilter === 'paid' && tx.status !== 'paid') return false
     if (supplierFilter !== 'all' && tx.contact_id !== supplierFilter) return false
 
+    // Filtro por Data (vencimento ou pagamento)
+    const rawDate = tx.due_date || tx.paid_date || ''
+    const txDate = rawDate.split('T')[0]
+    const parts = txDate.split('-')
+    const txYear = parts[0]
+    const txMonth = parts[1]
+
+    if (selectedDateFilter && txDate !== selectedDateFilter) return false
+    if (selectedMonth !== 'all' && txMonth !== selectedMonth) return false
+    if (selectedYear !== 'all' && txYear !== selectedYear) return false
+
     return true
   })
+
+  const filteredBillsTotal = useMemo(() => {
+    return filteredBills.reduce((acc, t) => acc + Number(t.amount || 0), 0)
+  }, [filteredBills])
 
   // Filtragem do catálogo de fornecedores
   const filteredSuppliers = suppliers.filter((s) => {
@@ -503,6 +681,214 @@ export function FornecedoresClient({
                   Pagas
                 </button>
               </div>
+            </div>
+          </div>
+
+          {/* Barra de Filtros de Período (Mês, Ano e Dia) - Padrão Degustação & Eventos */}
+          <div className="p-4 rounded-2xl bg-[#fbfbfd] border border-[#e5e5ea] space-y-3.5 shadow-2xs">
+            {/* Linha Principal: Mês, Ano e Atalhos */}
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-2.5">
+                <span className="text-xs font-semibold text-[#1d1d1f] flex items-center gap-1.5">
+                  <Calendar className="h-3.5 w-3.5 text-[#d97706]" />
+                  Período:
+                </span>
+
+                {/* Seletor de Mês */}
+                <select
+                  value={selectedMonth}
+                  onChange={(e) => handleMonthChange(e.target.value)}
+                  className="rounded-xl border border-[#d1d1d6] bg-white px-3 py-1.5 text-xs text-[#1d1d1f] font-medium focus:border-[#1d1d1f] focus:outline-none transition-all cursor-pointer hover:border-[#86868b]"
+                  title="Filtrar por Mês"
+                >
+                  <option value="all">Todos os Meses</option>
+                  {MONTH_NAMES.map((m) => (
+                    <option key={m.value} value={m.value}>
+                      {m.label}
+                    </option>
+                  ))}
+                </select>
+
+                {/* Seletor de Ano */}
+                <select
+                  value={selectedYear}
+                  onChange={(e) => handleYearChange(e.target.value)}
+                  className="rounded-xl border border-[#d1d1d6] bg-white px-3 py-1.5 text-xs text-[#1d1d1f] font-medium focus:border-[#1d1d1f] focus:outline-none transition-all cursor-pointer hover:border-[#86868b]"
+                  title="Filtrar por Ano"
+                >
+                  <option value="all">Todos os Anos</option>
+                  {availableYears.map((yr) => (
+                    <option key={yr} value={yr}>
+                      {yr}
+                    </option>
+                  ))}
+                </select>
+
+                {/* Navegação Rápida de Mês */}
+                {selectedMonth !== 'all' && (
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => handleNavigateMonth(-1)}
+                      className="p-1.5 text-xs font-medium rounded-lg border border-[#d1d1d6] bg-white text-[#6e6e73] hover:text-[#1d1d1f] hover:bg-[#f5f5f7] cursor-pointer"
+                      title="Mês anterior"
+                    >
+                      <ChevronLeft size={14} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleNavigateMonth(1)}
+                      className="p-1.5 text-xs font-medium rounded-lg border border-[#d1d1d6] bg-white text-[#6e6e73] hover:text-[#1d1d1f] hover:bg-[#f5f5f7] cursor-pointer"
+                      title="Próximo mês"
+                    >
+                      <ChevronRight size={14} />
+                    </button>
+                  </div>
+                )}
+
+                <div className="hidden sm:block h-4 w-px bg-[#e5e5ea]" />
+
+                <button
+                  type="button"
+                  onClick={handleSelectCurrentMonth}
+                  className={`px-3 py-1.5 text-xs font-semibold rounded-xl border transition-all cursor-pointer ${
+                    isCurrentMonthSelected
+                      ? 'bg-[#1d1d1f] text-white border-[#1d1d1f] shadow-xs'
+                      : 'bg-white text-[#6e6e73] border-[#d1d1d6] hover:text-[#1d1d1f] hover:bg-[#f5f5f7]'
+                  }`}
+                >
+                  Este Mês
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleSelectNextMonth}
+                  className={`px-3 py-1.5 text-xs font-semibold rounded-xl border transition-all cursor-pointer ${
+                    isNextMonthSelected
+                      ? 'bg-[#1d1d1f] text-white border-[#1d1d1f] shadow-xs'
+                      : 'bg-white text-[#6e6e73] border-[#d1d1d6] hover:text-[#1d1d1f] hover:bg-[#f5f5f7]'
+                  }`}
+                >
+                  Próximo Mês
+                </button>
+              </div>
+
+              {/* Contador / Resumo */}
+              <div className="flex items-center gap-2">
+                <span
+                  className={`text-xs font-semibold px-3 py-1.5 rounded-xl border flex items-center gap-1.5 ${
+                    hasActiveDateFilter
+                      ? filteredBills.length > 0
+                        ? 'bg-[#e8f8ee] border-[#1a7f37]/30 text-[#1a7f37]'
+                        : 'bg-[#fff8e6] border-[#b8860b]/30 text-[#b8860b]'
+                      : 'bg-white border-[#e5e5ea] text-[#6e6e73]'
+                  }`}
+                >
+                  <span
+                    className={`w-2 h-2 rounded-full ${
+                      hasActiveDateFilter
+                        ? filteredBills.length > 0
+                          ? 'bg-[#1a7f37]'
+                          : 'bg-[#b8860b]'
+                        : 'bg-[#86868b]'
+                    }`}
+                  />
+                  <strong>{filteredBills.length}</strong>{' '}
+                  {filteredBills.length === 1 ? 'conta' : 'contas'}{' '}
+                  {periodLabel}
+                  {filteredBills.length > 0 && (
+                    <span className="font-bold ml-1 text-[#1d1d1f]">
+                      (R$ {filteredBillsTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })})
+                    </span>
+                  )}
+                </span>
+
+                {hasActiveDateFilter && (
+                  <button
+                    type="button"
+                    onClick={handleClearDateFilters}
+                    className="px-2.5 py-1.5 text-xs font-semibold rounded-xl bg-[#feeceb] text-[#cf222e] hover:bg-[#fdd8d5] transition-all cursor-pointer flex items-center gap-1"
+                    title="Limpar todos os filtros de data"
+                  >
+                    <X size={13} />
+                    <span className="hidden sm:inline">Limpar Filtros</span>
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Linha Secundária: Dia Específico */}
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-2.5 border-t border-[#f0f0f4]">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs text-[#6e6e73] flex items-center gap-1 font-medium">
+                  <Clock className="h-3 w-3 text-[#86868b]" />
+                  Dia específico:
+                </span>
+
+                <input
+                  type="date"
+                  value={selectedDateFilter}
+                  onChange={(e) => handleDayChange(e.target.value)}
+                  className="rounded-xl border border-[#d1d1d6] bg-white px-2.5 py-1 text-xs text-[#1d1d1f] font-medium focus:border-[#1d1d1f] focus:outline-none transition-all cursor-pointer hover:border-[#86868b]"
+                  title="Selecione um dia específico"
+                />
+
+                <button
+                  type="button"
+                  onClick={handleSelectToday}
+                  className={`px-2.5 py-1 text-xs font-semibold rounded-lg border transition-all cursor-pointer ${
+                    selectedDateFilter === todayStr
+                      ? 'bg-[#1d1d1f] text-white border-[#1d1d1f]'
+                      : 'bg-white text-[#6e6e73] border-[#d1d1d6] hover:text-[#1d1d1f] hover:bg-[#f5f5f7]'
+                  }`}
+                >
+                  Hoje
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleSelectTomorrow}
+                  className={`px-2.5 py-1 text-xs font-semibold rounded-lg border transition-all cursor-pointer ${
+                    selectedDateFilter === tomorrowStr
+                      ? 'bg-[#1d1d1f] text-white border-[#1d1d1f]'
+                      : 'bg-white text-[#6e6e73] border-[#d1d1d6] hover:text-[#1d1d1f] hover:bg-[#f5f5f7]'
+                  }`}
+                >
+                  Amanhã
+                </button>
+
+                {selectedDateFilter && (
+                  <button
+                    type="button"
+                    onClick={handleClearDayOnly}
+                    className="px-2 py-1 text-xs font-medium rounded-lg text-[#0071e3] hover:bg-[#ebf4fe] transition-all cursor-pointer"
+                    title="Ver todo o mês selecionado"
+                  >
+                    Ver mês completo
+                  </button>
+                )}
+              </div>
+
+              {selectedDateFilter && (
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => handleNavigateDay(-1)}
+                    className="px-2 py-0.5 text-xs font-medium rounded-lg border border-[#d1d1d6] bg-white text-[#6e6e73] hover:text-[#1d1d1f] hover:bg-[#f5f5f7] cursor-pointer"
+                    title="Ver dia anterior"
+                  >
+                    ◀ Dia anterior
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleNavigateDay(1)}
+                    className="px-2 py-0.5 text-xs font-medium rounded-lg border border-[#d1d1d6] bg-white text-[#6e6e73] hover:text-[#1d1d1f] hover:bg-[#f5f5f7] cursor-pointer"
+                    title="Ver próximo dia"
+                  >
+                    Próximo dia ▶
+                  </button>
+                </div>
+              )}
             </div>
           </div>
 

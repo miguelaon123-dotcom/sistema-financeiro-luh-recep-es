@@ -5,6 +5,9 @@ import { getCaixinhas } from '../caixinhas/actions'
 
 import { getCachedData } from '@/lib/data-cache'
 
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
 export default async function FornecedoresPage({
   searchParams,
 }: {
