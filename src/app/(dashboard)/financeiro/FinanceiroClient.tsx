@@ -468,6 +468,21 @@ export function FinanceiroClient({
               Novembro/26
             </button>
 
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedMonth('12')
+                setSelectedYear('2026')
+              }}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-xl border transition-all cursor-pointer ${
+                selectedMonth === '12' && selectedYear === '2026'
+                  ? 'bg-[#1a7f37] text-white border-[#1a7f37] shadow-xs'
+                  : 'bg-[#f0fdf4] text-[#1a7f37] border-[#b4e8c7] hover:bg-[#dcfce7]'
+              }`}
+            >
+              Dezembro/26
+            </button>
+
             {isPeriodFiltered && (
               <button
                 type="button"
