@@ -614,11 +614,17 @@ export function FinanceiroClient({
           </div>
 
           {isPeriodFiltered && (
-            <div className="mt-3 pt-2.5 border-t border-[#f2f2f7] flex items-center justify-between text-xs text-[#6e6e73]">
-              <span>Margem Atual:</span>
-              <strong className={periodProfit >= 0 ? 'text-[#1a7f37]' : 'text-[#cf222e]'}>
-                {periodProfitMargin.toFixed(1)}%
-              </strong>
+            <div className="mt-3 pt-2.5 border-t border-[#f2f2f7] flex flex-col gap-1 text-[11px] text-[#6e6e73]">
+              <div className="flex items-center justify-between">
+                <span>Margem Atual:</span>
+                <strong className={periodProfit >= 0 ? 'text-[#1a7f37]' : 'text-[#cf222e]'}>
+                  {periodProfitMargin.toFixed(1)}%
+                </strong>
+              </div>
+              <div className="flex items-center justify-between text-[#b8860b]">
+                <span>Ao fechar contas:</span>
+                <strong>{periodProjectedProfitMargin.toFixed(1)}%</strong>
+              </div>
             </div>
           )}
         </div>
@@ -717,177 +723,6 @@ export function FinanceiroClient({
         </div>
       </div>
 
-      {/* PAINEL DE FECHAMENTO DO MÊS & % DE LUCRO */}
-      <div className="rounded-3xl border border-[#e5e5ea] bg-linear-to-b from-[#fbfbfd] to-white p-6 shadow-xs space-y-5">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-3 border-b border-[#f2f2f7]">
-          <div className="flex items-center gap-3">
-            <div className="rounded-2xl bg-[#1d1d1f] p-2.5 text-white shadow-2xs">
-              <Percent size={18} strokeWidth={2.2} />
-            </div>
-            <div>
-              <h3 className="text-base font-bold text-[#1d1d1f] flex items-center gap-2">
-                <span>Fechamento & Margem de Lucro: {periodLabel}</span>
-                {isPeriodFiltered && (
-                  <span className="rounded-md bg-[#e8f8ee] px-2 py-0.5 text-[11px] font-bold text-[#1a7f37]">
-                    Período Selecionado
-                  </span>
-                )}
-              </h3>
-              <p className="text-xs text-[#6e6e73]">
-                Resultado líquido do mês e a projeção de lucratividade (%) para quando todas as contas forem liquidadas.
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <div className="text-right">
-              <span className="text-[11px] text-[#86868b] block">Contas Liquidadas</span>
-              <span className="text-xs font-bold text-[#1d1d1f]">
-                {periodPaidTxsCount} de {periodTotalTxsCount} ({periodCompletionRate}%)
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* Grid de Comparativo: Realizado x Ao Fechar as Contas */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* Card A: Contas Já Fechadas / Realizado até agora */}
-          <div className="rounded-2xl border border-[#e5e5ea] bg-white p-5 shadow-xs space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="flex h-2.5 w-2.5 rounded-full bg-[#1a7f37]"></span>
-                <h4 className="text-xs font-bold uppercase tracking-wider text-[#1d1d1f]">
-                  Resultado Realizado (Contas Pagas)
-                </h4>
-              </div>
-              <span className="rounded-md bg-[#e8f8ee] px-2 py-0.5 text-xs font-bold text-[#1a7f37]">
-                Efetivado
-              </span>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 py-2 border-y border-[#f2f2f7]">
-              <div>
-                <span className="text-xs text-[#86868b] block">Receitas Recebidas</span>
-                <span className="text-sm font-bold text-[#1a7f37]">
-                  R$ {periodReceived.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                </span>
-              </div>
-              <div>
-                <span className="text-xs text-[#86868b] block">Despesas Pagas</span>
-                <span className="text-sm font-bold text-[#cf222e]">
-                  R$ {periodPaid.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                </span>
-              </div>
-            </div>
-
-            <div className="flex items-end justify-between pt-1">
-              <div>
-                <span className="text-xs text-[#86868b] block">Quanto Rendeu (Lucro Líquido Atual)</span>
-                <span
-                  className={`text-2xl font-black tracking-tight ${
-                    periodProfit >= 0 ? 'text-[#1a7f37]' : 'text-[#cf222e]'
-                  }`}
-                >
-                  R$ {periodProfit.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                </span>
-              </div>
-              <div className="text-right">
-                <span className="text-xs text-[#86868b] block">Margem de Lucro Atual</span>
-                <span
-                  className={`text-2xl font-black ${
-                    periodProfit >= 0 ? 'text-[#1a7f37]' : 'text-[#cf222e]'
-                  }`}
-                >
-                  {periodProfitMargin.toFixed(1)}%
-                </span>
-              </div>
-            </div>
-
-            <p className="text-[11px] text-[#86868b] leading-relaxed">
-              * Representa o valor líquido real que sobrou no caixa de tudo que já entrou e saiu neste período.
-            </p>
-          </div>
-
-          {/* Card B: Projeção Final (Quando fechar todas as contas do mês) */}
-          <div className="rounded-2xl border border-[#b8860b]/30 bg-[#fffdfa] p-5 shadow-xs space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="flex h-2.5 w-2.5 rounded-full bg-[#b8860b]"></span>
-                <h4 className="text-xs font-bold uppercase tracking-wider text-[#b8860b]">
-                  Ao Fechar as Contas (Com Pendências)
-                </h4>
-              </div>
-              <span className="rounded-md bg-[#fff8e6] px-2 py-0.5 text-xs font-bold text-[#b8860b]">
-                Projeção Final
-              </span>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 py-2 border-y border-[#f7ecd0]">
-              <div>
-                <span className="text-xs text-[#86868b] block">Faturamento Previsto Total</span>
-                <span className="text-sm font-bold text-[#1d1d1f]">
-                  R$ {periodProjectedIncome.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                </span>
-                <span className="text-[10px] text-[#86868b] block">
-                  (R$ {periodPendingIncome.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} a receber)
-                </span>
-              </div>
-              <div>
-                <span className="text-xs text-[#86868b] block">Despesas Totais Previstas</span>
-                <span className="text-sm font-bold text-[#1d1d1f]">
-                  R$ {periodProjectedExpense.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                </span>
-                <span className="text-[10px] text-[#86868b] block">
-                  (R$ {periodPendingExpense.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} a pagar)
-                </span>
-              </div>
-            </div>
-
-            <div className="flex items-end justify-between pt-1">
-              <div>
-                <span className="text-xs text-[#86868b] block">Lucro Previsto ao Fechar as Contas</span>
-                <span
-                  className={`text-2xl font-black tracking-tight ${
-                    periodProjectedProfit >= 0 ? 'text-[#1d1d1f]' : 'text-[#cf222e]'
-                  }`}
-                >
-                  R$ {periodProjectedProfit.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                </span>
-              </div>
-              <div className="text-right">
-                <span className="text-xs text-[#86868b] block">% de Lucro ao Fechar o Mês</span>
-                <span
-                  className={`text-2xl font-black ${
-                    periodProjectedProfit >= 0 ? 'text-[#1a7f37]' : 'text-[#cf222e]'
-                  }`}
-                >
-                  {periodProjectedProfitMargin.toFixed(1)}%
-                </span>
-              </div>
-            </div>
-
-            <p className="text-[11px] text-[#86868b] leading-relaxed">
-              * Quando todos os contratos a receber e despesas a pagar forem quitados, esta será a margem de lucro final do mês.
-            </p>
-          </div>
-        </div>
-
-        {/* Barra de Progresso do Fechamento */}
-        <div className="pt-2">
-          <div className="flex items-center justify-between text-xs text-[#6e6e73] mb-1.5">
-            <span>Progresso de Fechamento do Período ({periodLabel})</span>
-            <span>
-              <strong>{periodPaidTxsCount}</strong> de <strong>{periodTotalTxsCount}</strong> contas liquidadas ({periodCompletionRate}%)
-            </span>
-          </div>
-          <div className="h-2 w-full bg-[#f2f2f7] rounded-full overflow-hidden">
-            <div
-              className="h-full bg-linear-to-r from-[#1a7f37] to-[#2da44e] transition-all duration-300 rounded-full"
-              style={{ width: `${periodCompletionRate}%` }}
-            />
-          </div>
-        </div>
-      </div>
 
       {/* Abas de Navegação */}
       <div className="flex items-center gap-2 border-b border-[#f2f2f7] pb-3">
