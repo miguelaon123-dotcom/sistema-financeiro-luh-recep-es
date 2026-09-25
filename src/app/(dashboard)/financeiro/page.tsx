@@ -25,7 +25,7 @@ export default async function FinanceiroPage({
           .from('financial_transactions')
           .select(`
             id, amount, type, status, description, due_date, paid_date,
-            events(id, title), contacts(id, name)
+            events(id, title, event_date), contacts(id, name)
           `)
           .order('due_date', { ascending: false }),
         supabase.from('contacts').select('id, name').order('name', { ascending: true }),

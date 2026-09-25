@@ -39,3 +39,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Contratos em PDF (apenas fonte de dados local, nunca versionar)
+contratos/

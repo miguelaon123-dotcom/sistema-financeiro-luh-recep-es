@@ -15,6 +15,7 @@ import {
 } from 'lucide-react'
 import { getCaixinhas } from './caixinhas/actions'
 import { CaixinhasFinanceiras } from '@/components/CaixinhasFinanceiras'
+import { DashboardKpis } from '@/components/DashboardKpis'
 
 import { getCachedData } from '@/lib/data-cache'
 
@@ -30,7 +31,7 @@ export default async function DashboardPage() {
           .from('financial_transactions')
           .select(`
             id, amount, type, status, description, due_date, paid_date,
-            events(id, title), contacts(id, name)
+            events(id, title, event_date), contacts(id, name)
           `)
           .order('due_date', { ascending: false }),
         supabase
@@ -163,129 +164,8 @@ export default async function DashboardPage() {
         </div>
       </div>
 
-      {/* KPI Cards Principais */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
-        {/* 1. Saldo em Caixa Real */}
-        <Link
-          href="/financeiro?action=ajustar-saldo"
-          className="group block rounded-2xl border border-[#e5e5ea] bg-white p-5 shadow-xs transition-all duration-150 hover:border-[#0071e3]/40 hover:shadow-sm"
-          title="Clique para ajustar o saldo real da conta bancária"
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-[#6e6e73]">
-              Saldo em Caixa
-            </span>
-            <div className="rounded-xl bg-[#e8f8ee] p-2 text-[#1a7f37]">
-              <Wallet className="h-4 w-4" strokeWidth={2.2} />
-            </div>
-          </div>
-          <p className="mt-3 text-2xl font-bold tracking-tight text-[#1d1d1f]">
-            R$ {cashBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-          </p>
-          <div className="mt-2 flex items-center justify-between text-xs text-[#86868b]">
-            <span>Recebido − Pago</span>
-            <span className="text-[#0071e3] font-medium group-hover:underline flex items-center gap-0.5">
-              Ajustar Saldo <ArrowRight size={11} />
-            </span>
-          </div>
-        </Link>
-
-        {/* 2. Saldo Livre */}
-        <Link
-          href="/financeiro?tab=caixinhas"
-          className="group block rounded-2xl border border-[#e5e5ea] bg-white p-5 shadow-xs transition-all duration-150 hover:border-[#1a7f37]/50 hover:shadow-sm"
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-[#1a7f37]">
-              Saldo Livre
-            </span>
-            <span className="rounded-md bg-[#e8f8ee] px-1.5 py-0.5 text-[10px] font-bold text-[#1a7f37]">
-              Disponível
-            </span>
-          </div>
-          <p className="mt-3 text-2xl font-bold tracking-tight text-[#1a7f37]">
-            R$ {freeCashBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-          </p>
-          <div className="mt-2 flex items-center justify-between text-xs text-[#86868b]">
-            <span>Livre de caixinhas</span>
-            <span className="text-[#1a7f37] font-medium group-hover:underline flex items-center gap-0.5">
-              Usar <ArrowRight size={11} />
-            </span>
-          </div>
-        </Link>
-
-        {/* 3. Guardado em Caixinhas */}
-        <a
-          href="#caixinhas"
-          className="group block rounded-2xl border border-[#e5e5ea] bg-white p-5 shadow-xs transition-all duration-150 hover:border-[#1d1d1f]/40 hover:shadow-sm"
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-[#1d1d1f]">
-              Em Caixinhas
-            </span>
-            <span className="rounded-md bg-[#f5f5f7] px-1.5 py-0.5 text-[10px] font-bold text-[#1d1d1f]">
-              {caixinhas.length} ativas
-            </span>
-          </div>
-          <p className="mt-3 text-2xl font-bold tracking-tight text-[#1d1d1f]">
-            R$ {totalInCaixinhas.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-          </p>
-          <div className="mt-2 flex items-center justify-between text-xs text-[#86868b]">
-            <span>Metas e reservas</span>
-            <span className="text-[#1d1d1f] font-semibold group-hover:underline flex items-center gap-0.5">
-              Ver <ArrowRight size={11} />
-            </span>
-          </div>
-        </a>
-
-        {/* 4. A Receber */}
-        <Link
-          href="/financeiro"
-          className="group block rounded-2xl border border-[#e5e5ea] bg-white p-5 shadow-xs transition-all duration-150 hover:border-[#b8860b]/40 hover:shadow-sm"
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-[#b8860b]">
-              A Receber (Futuro)
-            </span>
-            <div className="rounded-xl bg-[#fff8e6] p-2 text-[#b8860b]">
-              <TrendingUp className="h-4 w-4" strokeWidth={2.2} />
-            </div>
-          </div>
-          <p className="mt-3 text-2xl font-bold tracking-tight text-[#b8860b]">
-            R$ {pendingIncome.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-          </p>
-          <div className="mt-2 flex items-center justify-between text-xs text-[#86868b]">
-            <span>{totalReceived.toLocaleString('pt-BR', { minimumFractionDigits: 0 })} recebidos</span>
-            <span className="text-[#b8860b] font-medium group-hover:underline flex items-center gap-0.5">
-              Extrato <ArrowRight size={11} />
-            </span>
-          </div>
-        </Link>
-
-        {/* 5. A Pagar */}
-        <Link
-          href="/financeiro"
-          className="group block rounded-2xl border border-[#e5e5ea] bg-white p-5 shadow-xs transition-all duration-150 hover:border-[#cf222e]/40 hover:shadow-sm"
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-[#cf222e]">
-              A Pagar (Futuro)
-            </span>
-            <div className="rounded-xl bg-[#feeceb] p-2 text-[#cf222e]">
-              <TrendingDown className="h-4 w-4" strokeWidth={2.2} />
-            </div>
-          </div>
-          <p className="mt-3 text-2xl font-bold tracking-tight text-[#cf222e]">
-            R$ {pendingExpense.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-          </p>
-          <div className="mt-2 flex items-center justify-between text-xs text-[#86868b]">
-            <span>{totalPaid.toLocaleString('pt-BR', { minimumFractionDigits: 0 })} pagos</span>
-            <span className="text-[#cf222e] font-medium group-hover:underline flex items-center gap-0.5">
-              Extrato <ArrowRight size={11} />
-            </span>
-          </div>
-        </Link>
-      </div>
+      {/* KPI Cards & Análise de Fechamento por Mês */}
+      <DashboardKpis transactions={transactions} caixinhas={caixinhas} />
 
       {/* Caixinhas de Organização Financeira */}
       <div id="caixinhas" className="scroll-mt-8">

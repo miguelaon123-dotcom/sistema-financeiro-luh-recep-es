@@ -24,6 +24,13 @@ import {
   Clock,
   ChevronLeft,
   ChevronRight,
+  TrendingUp,
+  TrendingDown,
+  Percent,
+  Sparkles,
+  ArrowRight,
+  BarChart3,
+  PieChart,
 } from 'lucide-react'
 import {
   createTransaction,
@@ -45,7 +52,7 @@ interface Transaction {
   due_date: string
   paid_date?: string | null
   contacts?: { id: string; name: string } | null
-  events?: { id: string; title: string } | null
+  events?: { id: string; title: string; event_date?: string } | null
 }
 
 export function FinanceiroClient({
@@ -77,6 +84,7 @@ export function FinanceiroClient({
   const [filterStatus, setFilterStatus] = useState<string>('all')
   const [selectedMonth, setSelectedMonth] = useState<string>('all')
   const [selectedYear, setSelectedYear] = useState<string>('all')
+  const [dateFilterMode, setDateFilterMode] = useState<'event' | 'due'>('event')
   const [modalType, setModalType] = useState<'income' | 'expense' | null>(
     initialAction === 'nova-receita'
       ? 'income'
@@ -112,6 +120,16 @@ export function FinanceiroClient({
     { value: '12', label: 'Dezembro' },
   ]
 
+  // Resolução inteligente da data de competência da transação
+  const getTransactionDate = (tx: Transaction) => {
+    // Modo Evento (Competência da Festa): se a transação estiver ligada a um evento, usa a data da festa
+    if (dateFilterMode === 'event' && tx.events?.event_date) {
+      return tx.events.event_date
+    }
+    // Modo Vencimento/Caixa: se pago usa paid_date, se pendente usa due_date
+    return (tx.status === 'paid' && tx.paid_date ? tx.paid_date : tx.due_date) || tx.due_date || ''
+  }
+
   const availableYears = useMemo(() => {
     const currentY = new Date().getFullYear()
     const yearsSet = new Set<string>()
@@ -119,14 +137,14 @@ export function FinanceiroClient({
     yearsSet.add(String(currentY - 1))
     yearsSet.add(String(currentY + 1))
     localTransactions.forEach((tx) => {
-      const d = (tx.status === 'paid' && tx.paid_date ? tx.paid_date : tx.due_date) || ''
+      const d = getTransactionDate(tx)
       if (d) {
         const y = d.split('-')[0]
         if (y && !isNaN(Number(y)) && y.length === 4) yearsSet.add(y)
       }
     })
     return Array.from(yearsSet).sort()
-  }, [localTransactions])
+  }, [localTransactions, dateFilterMode])
 
   const now = new Date()
   const currentYearStr = String(now.getFullYear())
@@ -140,26 +158,84 @@ export function FinanceiroClient({
   const isNextMonthSelected =
     selectedMonth === nextMonthStr && selectedYear === nextMonthYearStr
 
-  // Cálculos dinâmicos
-  const pendingIncome = localTransactions
+  // Período Selecionado
+  const isPeriodFiltered = selectedMonth !== 'all' || selectedYear !== 'all'
+  const selectedMonthObj = MONTH_NAMES.find((m) => m.value === selectedMonth)
+  const periodLabel =
+    selectedMonth !== 'all'
+      ? `${selectedMonthObj?.label || selectedMonth} de ${selectedYear !== 'all' ? selectedYear : currentYearStr}`
+      : selectedYear !== 'all'
+      ? `Ano de ${selectedYear}`
+      : 'Todos os Meses'
+
+  // Transações pertencentes ao período selecionado
+  const periodTransactions = useMemo(() => {
+    return localTransactions.filter((tx) => {
+      const effectiveDate = getTransactionDate(tx)
+      const parts = effectiveDate.split('-')
+      const txYear = parts[0]
+      const txMonth = parts[1]
+
+      if (selectedMonth !== 'all' && txMonth !== selectedMonth) return false
+      if (selectedYear !== 'all' && txYear !== selectedYear) return false
+      return true
+    })
+  }, [localTransactions, selectedMonth, selectedYear, dateFilterMode])
+
+  // Métricas do Período Selecionado (Mês/Ano)
+  const periodReceived = periodTransactions
+    .filter((t) => t.type === 'income' && t.status === 'paid')
+    .reduce((acc, t) => acc + Number(t.amount || 0), 0)
+
+  const periodPaid = periodTransactions
+    .filter((t) => t.type === 'expense' && t.status === 'paid')
+    .reduce((acc, t) => acc + Number(t.amount || 0), 0)
+
+  const periodPendingIncome = periodTransactions
     .filter((t) => t.type === 'income' && t.status === 'pending')
-    .reduce((acc, t) => acc + Number(t.amount), 0)
+    .reduce((acc, t) => acc + Number(t.amount || 0), 0)
 
-  const pendingExpense = localTransactions
+  const periodPendingExpense = periodTransactions
     .filter((t) => t.type === 'expense' && t.status === 'pending')
-    .reduce((acc, t) => acc + Number(t.amount), 0)
+    .reduce((acc, t) => acc + Number(t.amount || 0), 0)
 
+  // Rendimento Atual / Lucro Realizado (O que já entrou menos o que já saiu no período)
+  const periodProfit = periodReceived - periodPaid
+  const periodProfitMargin = periodReceived > 0 ? (periodProfit / periodReceived) * 100 : 0
+
+  // Fechamento Total Projetado do Mês (Considerando o que ainda vai entrar e sair)
+  const periodProjectedIncome = periodReceived + periodPendingIncome
+  const periodProjectedExpense = periodPaid + periodPendingExpense
+  const periodProjectedProfit = periodProjectedIncome - periodProjectedExpense
+  const periodProjectedProfitMargin =
+    periodProjectedIncome > 0 ? (periodProjectedProfit / periodProjectedIncome) * 100 : 0
+
+  // Taxa de liquidação / contas quitadas no mês
+  const periodPaidTxsCount = periodTransactions.filter((t) => t.status === 'paid').length
+  const periodTotalTxsCount = periodTransactions.length
+  const periodCompletionRate =
+    periodTotalTxsCount > 0 ? Math.round((periodPaidTxsCount / periodTotalTxsCount) * 100) : 100
+
+  // Métricas Globais (Acumulado Total em Caixa Real)
   const totalReceived = localTransactions
     .filter((t) => t.type === 'income' && t.status === 'paid')
-    .reduce((acc, t) => acc + Number(t.amount), 0)
+    .reduce((acc, t) => acc + Number(t.amount || 0), 0)
 
   const totalPaid = localTransactions
     .filter((t) => t.type === 'expense' && t.status === 'paid')
-    .reduce((acc, t) => acc + Number(t.amount), 0)
+    .reduce((acc, t) => acc + Number(t.amount || 0), 0)
 
   const cashBalance = totalReceived - totalPaid
   const totalInCaixinhas = (caixinhas || []).reduce((acc, c) => acc + Number(c.current_balance || 0), 0)
   const freeCashBalance = Math.max(0, cashBalance - totalInCaixinhas)
+
+  const pendingIncomeAll = localTransactions
+    .filter((t) => t.type === 'income' && t.status === 'pending')
+    .reduce((acc, t) => acc + Number(t.amount || 0), 0)
+
+  const pendingExpenseAll = localTransactions
+    .filter((t) => t.type === 'expense' && t.status === 'pending')
+    .reduce((acc, t) => acc + Number(t.amount || 0), 0)
 
   // Filtragem e Ordenação Inteligente
   const filteredTransactions = useMemo(() => {
@@ -172,8 +248,8 @@ export function FinanceiroClient({
 
         if (!matchesSearch) return false
 
-        // Filtro por Mês e Ano
-        const effectiveDate = (tx.status === 'paid' && tx.paid_date ? tx.paid_date : tx.due_date) || ''
+        // Filtro por Mês e Ano usando getTransactionDate
+        const effectiveDate = getTransactionDate(tx)
         const parts = effectiveDate.split('-')
         const txYear = parts[0]
         const txMonth = parts[1]
@@ -190,11 +266,11 @@ export function FinanceiroClient({
         return true
       })
       .sort((a, b) => {
-        const dateA = (a.status === 'paid' && a.paid_date ? a.paid_date : a.due_date) || ''
-        const dateB = (b.status === 'paid' && b.paid_date ? b.paid_date : b.due_date) || ''
+        const dateA = getTransactionDate(a)
+        const dateB = getTransactionDate(b)
         return dateB.localeCompare(dateA)
       })
-  }, [localTransactions, searchTerm, filterStatus, selectedMonth, selectedYear])
+  }, [localTransactions, searchTerm, filterStatus, selectedMonth, selectedYear, dateFilterMode])
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
@@ -309,14 +385,154 @@ export function FinanceiroClient({
         </div>
       </div>
 
-      {/* Summary Cards Consolidados */}
+      {/* BARRA DE FILTRO POR MÊS E PERÍODO */}
+      <div className="rounded-2xl border border-[#e5e5ea] bg-white p-4 shadow-xs space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-1.5 text-xs font-bold text-[#1d1d1f]">
+              <Calendar className="h-4 w-4 text-[#b8860b]" />
+              <span>Filtrar Mês do Fechamento:</span>
+            </div>
+
+            {/* Select Mês */}
+            <select
+              value={selectedMonth}
+              onChange={(e) => setSelectedMonth(e.target.value)}
+              className="rounded-xl border border-[#d1d1d6] bg-white px-3 py-1.5 text-xs text-[#1d1d1f] font-semibold focus:outline-none focus:ring-1 focus:ring-[#1d1d1f] cursor-pointer shadow-2xs"
+            >
+              <option value="all">📅 Todos os Meses</option>
+              {MONTH_NAMES.map((m) => (
+                <option key={m.value} value={m.value}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
+
+            {/* Select Ano */}
+            <select
+              value={selectedYear}
+              onChange={(e) => setSelectedYear(e.target.value)}
+              className="rounded-xl border border-[#d1d1d6] bg-white px-3 py-1.5 text-xs text-[#1d1d1f] font-semibold focus:outline-none focus:ring-1 focus:ring-[#1d1d1f] cursor-pointer shadow-2xs"
+            >
+              <option value="all">Todos os Anos</option>
+              {availableYears.map((yr) => (
+                <option key={yr} value={yr}>
+                  {yr}
+                </option>
+              ))}
+            </select>
+
+            {/* Atalhos Rápidos */}
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedMonth(currentMonthStr)
+                setSelectedYear(currentYearStr)
+              }}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-xl border transition-all cursor-pointer ${
+                isCurrentMonthSelected
+                  ? 'bg-[#1d1d1f] text-white border-[#1d1d1f] shadow-xs'
+                  : 'bg-white text-[#6e6e73] border-[#d1d1d6] hover:text-[#1d1d1f] hover:bg-[#f5f5f7]'
+              }`}
+            >
+              Este Mês
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedMonth(nextMonthStr)
+                setSelectedYear(nextMonthYearStr)
+              }}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-xl border transition-all cursor-pointer ${
+                isNextMonthSelected
+                  ? 'bg-[#1d1d1f] text-white border-[#1d1d1f] shadow-xs'
+                  : 'bg-white text-[#6e6e73] border-[#d1d1d6] hover:text-[#1d1d1f] hover:bg-[#f5f5f7]'
+              }`}
+            >
+              Próximo Mês
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedMonth('11')
+                setSelectedYear('2026')
+              }}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-xl border transition-all cursor-pointer ${
+                selectedMonth === '11' && selectedYear === '2026'
+                  ? 'bg-[#b8860b] text-white border-[#b8860b] shadow-xs'
+                  : 'bg-[#fffdf5] text-[#b8860b] border-[#f0e6cc] hover:bg-[#fff9e6]'
+              }`}
+            >
+              Novembro/26
+            </button>
+
+            {isPeriodFiltered && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedMonth('all')
+                  setSelectedYear('all')
+                }}
+                className="px-2.5 py-1.5 text-xs font-semibold text-[#cf222e] hover:bg-[#feeceb] rounded-xl transition-all cursor-pointer border border-transparent hover:border-[#fcd7d5]"
+              >
+                Limpar Filtro
+              </button>
+            )}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Seletor de Modo: Por Mês da Festa (Evento) vs Data de Vencimento */}
+            <div className="flex items-center gap-1 bg-[#f5f5f7] p-1 rounded-xl">
+              <button
+                type="button"
+                onClick={() => setDateFilterMode('event')}
+                className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+                  dateFilterMode === 'event'
+                    ? 'bg-white text-[#1d1d1f] shadow-xs'
+                    : 'text-[#6e6e73] hover:text-[#1d1d1f]'
+                }`}
+                title="Agrupa pelo mês da festa/evento (Recomendado para contratos de buffet)"
+              >
+                🎉 Mês do Evento (Festas)
+              </button>
+              <button
+                type="button"
+                onClick={() => setDateFilterMode('due')}
+                className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+                  dateFilterMode === 'due'
+                    ? 'bg-white text-[#1d1d1f] shadow-xs'
+                    : 'text-[#6e6e73] hover:text-[#1d1d1f]'
+                }`}
+                title="Agrupa pela data de vencimento / quitação da parcela"
+              >
+                📅 Vencimento / Quitação
+              </button>
+            </div>
+
+            <span
+              className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold border ${
+                isPeriodFiltered
+                  ? 'bg-[#e8f8ee] text-[#1a7f37] border-[#b4e8c7]'
+                  : 'bg-[#f5f5f7] text-[#6e6e73] border-[#e5e5ea]'
+              }`}
+            >
+              <Filter size={12} />
+              <span>{isPeriodFiltered ? `Filtrando: ${periodLabel}` : 'Exibindo: Todos os Meses'}</span>
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Summary Cards Consolidados (Dinâmicos por Mês) */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
-        {/* 1. Saldo Real em Caixa */}
+        {/* 1. Saldo em Caixa / Entradas Pagas no Mês */}
         <div className="rounded-2xl border border-[#e5e5ea] bg-white p-5 shadow-xs flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between">
               <span className="text-xs font-semibold uppercase tracking-wider text-[#6e6e73]">
-                Saldo em Caixa (Real)
+                {isPeriodFiltered ? 'Entradas Pagas no Mês' : 'Saldo em Caixa (Real)'}
               </span>
               <div className="rounded-xl bg-[#e8f8ee] p-1.5 text-[#1a7f37]">
                 <Wallet size={16} />
@@ -324,13 +540,18 @@ export function FinanceiroClient({
             </div>
             <p
               className={`mt-2 text-2xl font-bold tracking-tight ${
-                cashBalance >= 0 ? 'text-[#1d1d1f]' : 'text-[#cf222e]'
+                (isPeriodFiltered ? periodReceived : cashBalance) >= 0 ? 'text-[#1d1d1f]' : 'text-[#cf222e]'
               }`}
             >
-              R$ {cashBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+              R${' '}
+              {(isPeriodFiltered ? periodReceived : cashBalance).toLocaleString('pt-BR', {
+                minimumFractionDigits: 2,
+              })}
             </p>
             <span className="mt-1 block text-xs text-[#86868b]">
-              Recebido ({totalReceived.toLocaleString('pt-BR', { minimumFractionDigits: 0 })}) − Pago ({totalPaid.toLocaleString('pt-BR', { minimumFractionDigits: 0 })})
+              {isPeriodFiltered
+                ? `Saídas pagas no mês: R$ ${periodPaid.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
+                : `Recebido (${totalReceived.toLocaleString('pt-BR', { minimumFractionDigits: 0 })}) − Pago (${totalPaid.toLocaleString('pt-BR', { minimumFractionDigits: 0 })})`}
             </span>
           </div>
 
@@ -352,73 +573,319 @@ export function FinanceiroClient({
           </div>
         </div>
 
-        {/* 2. Saldo Livre */}
-        <div className="rounded-2xl border border-[#e5e5ea] bg-white p-5 shadow-xs">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-[#1a7f37]">
-              Saldo Livre
-            </span>
-            <span className="rounded-md bg-[#e8f8ee] px-1.5 py-0.5 text-[10px] font-bold text-[#1a7f37]">
-              Disponível
+        {/* 2. Saldo Livre / Rendimento do Mês */}
+        <div className="rounded-2xl border border-[#e5e5ea] bg-white p-5 shadow-xs flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase tracking-wider text-[#1a7f37]">
+                {isPeriodFiltered ? 'Rendimento do Mês' : 'Saldo Livre'}
+              </span>
+              <span
+                className={`rounded-md px-1.5 py-0.5 text-[10px] font-bold ${
+                  isPeriodFiltered
+                    ? periodProfit >= 0
+                      ? 'bg-[#e8f8ee] text-[#1a7f37]'
+                      : 'bg-[#feeceb] text-[#cf222e]'
+                    : 'bg-[#e8f8ee] text-[#1a7f37]'
+                }`}
+              >
+                {isPeriodFiltered
+                  ? `${periodProfit >= 0 ? '+' : ''}${periodProfitMargin.toFixed(1)}% de lucro`
+                  : 'Disponível'}
+              </span>
+            </div>
+            <p
+              className={`mt-2 text-2xl font-bold tracking-tight ${
+                (isPeriodFiltered ? periodProfit : freeCashBalance) >= 0
+                  ? 'text-[#1a7f37]'
+                  : 'text-[#cf222e]'
+              }`}
+            >
+              R${' '}
+              {(isPeriodFiltered ? periodProfit : freeCashBalance).toLocaleString('pt-BR', {
+                minimumFractionDigits: 2,
+              })}
+            </p>
+            <span className="mt-1 block text-xs text-[#86868b]">
+              {isPeriodFiltered
+                ? `Lucro líquido realizado no período`
+                : 'Saldo em Caixa − Caixinhas'}
             </span>
           </div>
-          <p className="mt-2 text-2xl font-bold tracking-tight text-[#1a7f37]">
-            R$ {freeCashBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-          </p>
-          <span className="mt-1 block text-xs text-[#86868b]">
-            Saldo em Caixa − Caixinhas
-          </span>
+
+          {isPeriodFiltered && (
+            <div className="mt-3 pt-2.5 border-t border-[#f2f2f7] flex items-center justify-between text-xs text-[#6e6e73]">
+              <span>Margem Atual:</span>
+              <strong className={periodProfit >= 0 ? 'text-[#1a7f37]' : 'text-[#cf222e]'}>
+                {periodProfitMargin.toFixed(1)}%
+              </strong>
+            </div>
+          )}
         </div>
 
-        {/* 3. Caixinhas */}
+        {/* 3. Em Caixinhas */}
         <div
           onClick={() => setActiveTab('caixinhas')}
-          className="rounded-2xl border border-[#e5e5ea] bg-white p-5 shadow-xs hover:border-[#1d1d1f]/40 cursor-pointer transition-all"
+          className="rounded-2xl border border-[#e5e5ea] bg-white p-5 shadow-xs hover:border-[#1d1d1f]/40 cursor-pointer transition-all flex flex-col justify-between"
         >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-[#1d1d1f]">
-              Em Caixinhas
-            </span>
-            <span className="rounded-md bg-[#f5f5f7] px-1.5 py-0.5 text-[10px] font-bold text-[#1d1d1f]">
-              {caixinhas.length} ativas
-            </span>
+          <div>
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase tracking-wider text-[#1d1d1f]">
+                Em Caixinhas
+              </span>
+              <span className="rounded-md bg-[#f5f5f7] px-1.5 py-0.5 text-[10px] font-bold text-[#1d1d1f]">
+                {caixinhas.length} ativas
+              </span>
+            </div>
+            <p className="mt-2 text-2xl font-bold tracking-tight text-[#1d1d1f]">
+              R$ {totalInCaixinhas.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+            </p>
+            <span className="mt-1 block text-xs text-[#86868b]">Reservas separadas →</span>
           </div>
-          <p className="mt-2 text-2xl font-bold tracking-tight text-[#1d1d1f]">
-            R$ {totalInCaixinhas.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-          </p>
-          <span className="mt-1 block text-xs text-[#86868b]">Reservas separadas →</span>
+          <div className="mt-3 pt-2.5 border-t border-[#f2f2f7] flex items-center justify-between text-xs text-[#0071e3] font-semibold">
+            <span>Ver caixinhas</span>
+            <ArrowRight size={12} />
+          </div>
         </div>
 
-        {/* 4. A Receber (Pendente) */}
-        <div className="rounded-2xl border border-[#e5e5ea] bg-white p-5 shadow-xs">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-[#b8860b]">
-              A Receber (Futuro)
-            </span>
-            <span className="rounded-md bg-[#fff8e6] px-1.5 py-0.5 text-[10px] font-bold text-[#b8860b]">
-              Pendente
+        {/* 4. A Receber (no Mês ou Total) */}
+        <div className="rounded-2xl border border-[#e5e5ea] bg-white p-5 shadow-xs flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase tracking-wider text-[#b8860b]">
+                {isPeriodFiltered ? 'A Receber no Mês' : 'A Receber (Futuro)'}
+              </span>
+              <span className="rounded-md bg-[#fff8e6] px-1.5 py-0.5 text-[10px] font-bold text-[#b8860b]">
+                Pendente
+              </span>
+            </div>
+            <p className="mt-2 text-2xl font-bold tracking-tight text-[#b8860b]">
+              R${' '}
+              {(isPeriodFiltered ? periodPendingIncome : pendingIncomeAll).toLocaleString('pt-BR', {
+                minimumFractionDigits: 2,
+              })}
+            </p>
+            <span className="mt-1 block text-xs text-[#86868b]">
+              {isPeriodFiltered
+                ? `Vencimentos previstos em ${periodLabel}`
+                : 'Contratos e locações pendentes'}
             </span>
           </div>
-          <p className="mt-2 text-2xl font-bold tracking-tight text-[#b8860b]">
-            R$ {pendingIncome.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-          </p>
-          <span className="mt-1 block text-xs text-[#86868b]">Contratos e locações pendentes</span>
+
+          {isPeriodFiltered && (
+            <div className="mt-3 pt-2.5 border-t border-[#f2f2f7] flex items-center justify-between text-xs text-[#86868b]">
+              <span>Prev. Total:</span>
+              <strong className="text-[#1d1d1f]">
+                R$ {periodProjectedIncome.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+              </strong>
+            </div>
+          )}
         </div>
 
-        {/* 5. A Pagar (Pendente) */}
-        <div className="rounded-2xl border border-[#e5e5ea] bg-white p-5 shadow-xs">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-[#cf222e]">
-              A Pagar (Futuro)
-            </span>
-            <span className="rounded-md bg-[#feeceb] px-1.5 py-0.5 text-[10px] font-bold text-[#cf222e]">
-              Pendente
+        {/* 5. A Pagar (no Mês ou Total) */}
+        <div className="rounded-2xl border border-[#e5e5ea] bg-white p-5 shadow-xs flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase tracking-wider text-[#cf222e]">
+                {isPeriodFiltered ? 'A Pagar no Mês' : 'A Pagar (Futuro)'}
+              </span>
+              <span className="rounded-md bg-[#feeceb] px-1.5 py-0.5 text-[10px] font-bold text-[#cf222e]">
+                Pendente
+              </span>
+            </div>
+            <p className="mt-2 text-2xl font-bold tracking-tight text-[#cf222e]">
+              R${' '}
+              {(isPeriodFiltered ? periodPendingExpense : pendingExpenseAll).toLocaleString('pt-BR', {
+                minimumFractionDigits: 2,
+              })}
+            </p>
+            <span className="mt-1 block text-xs text-[#86868b]">
+              {isPeriodFiltered
+                ? `Custos a vencer em ${periodLabel}`
+                : 'Fornecedores e custos fixos'}
             </span>
           </div>
-          <p className="mt-2 text-2xl font-bold tracking-tight text-[#cf222e]">
-            R$ {pendingExpense.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-          </p>
-          <span className="mt-1 block text-xs text-[#86868b]">Fornecedores e custos fixos</span>
+
+          {isPeriodFiltered && (
+            <div className="mt-3 pt-2.5 border-t border-[#f2f2f7] flex items-center justify-between text-xs text-[#86868b]">
+              <span>Custo Total:</span>
+              <strong className="text-[#1d1d1f]">
+                R$ {periodProjectedExpense.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+              </strong>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* PAINEL DE FECHAMENTO DO MÊS & % DE LUCRO */}
+      <div className="rounded-3xl border border-[#e5e5ea] bg-linear-to-b from-[#fbfbfd] to-white p-6 shadow-xs space-y-5">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-3 border-b border-[#f2f2f7]">
+          <div className="flex items-center gap-3">
+            <div className="rounded-2xl bg-[#1d1d1f] p-2.5 text-white shadow-2xs">
+              <Percent size={18} strokeWidth={2.2} />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-[#1d1d1f] flex items-center gap-2">
+                <span>Fechamento & Margem de Lucro: {periodLabel}</span>
+                {isPeriodFiltered && (
+                  <span className="rounded-md bg-[#e8f8ee] px-2 py-0.5 text-[11px] font-bold text-[#1a7f37]">
+                    Período Selecionado
+                  </span>
+                )}
+              </h3>
+              <p className="text-xs text-[#6e6e73]">
+                Resultado líquido do mês e a projeção de lucratividade (%) para quando todas as contas forem liquidadas.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <div className="text-right">
+              <span className="text-[11px] text-[#86868b] block">Contas Liquidadas</span>
+              <span className="text-xs font-bold text-[#1d1d1f]">
+                {periodPaidTxsCount} de {periodTotalTxsCount} ({periodCompletionRate}%)
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Grid de Comparativo: Realizado x Ao Fechar as Contas */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Card A: Contas Já Fechadas / Realizado até agora */}
+          <div className="rounded-2xl border border-[#e5e5ea] bg-white p-5 shadow-xs space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="flex h-2.5 w-2.5 rounded-full bg-[#1a7f37]"></span>
+                <h4 className="text-xs font-bold uppercase tracking-wider text-[#1d1d1f]">
+                  Resultado Realizado (Contas Pagas)
+                </h4>
+              </div>
+              <span className="rounded-md bg-[#e8f8ee] px-2 py-0.5 text-xs font-bold text-[#1a7f37]">
+                Efetivado
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 py-2 border-y border-[#f2f2f7]">
+              <div>
+                <span className="text-xs text-[#86868b] block">Receitas Recebidas</span>
+                <span className="text-sm font-bold text-[#1a7f37]">
+                  R$ {periodReceived.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                </span>
+              </div>
+              <div>
+                <span className="text-xs text-[#86868b] block">Despesas Pagas</span>
+                <span className="text-sm font-bold text-[#cf222e]">
+                  R$ {periodPaid.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-end justify-between pt-1">
+              <div>
+                <span className="text-xs text-[#86868b] block">Quanto Rendeu (Lucro Líquido Atual)</span>
+                <span
+                  className={`text-2xl font-black tracking-tight ${
+                    periodProfit >= 0 ? 'text-[#1a7f37]' : 'text-[#cf222e]'
+                  }`}
+                >
+                  R$ {periodProfit.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                </span>
+              </div>
+              <div className="text-right">
+                <span className="text-xs text-[#86868b] block">Margem de Lucro Atual</span>
+                <span
+                  className={`text-2xl font-black ${
+                    periodProfit >= 0 ? 'text-[#1a7f37]' : 'text-[#cf222e]'
+                  }`}
+                >
+                  {periodProfitMargin.toFixed(1)}%
+                </span>
+              </div>
+            </div>
+
+            <p className="text-[11px] text-[#86868b] leading-relaxed">
+              * Representa o valor líquido real que sobrou no caixa de tudo que já entrou e saiu neste período.
+            </p>
+          </div>
+
+          {/* Card B: Projeção Final (Quando fechar todas as contas do mês) */}
+          <div className="rounded-2xl border border-[#b8860b]/30 bg-[#fffdfa] p-5 shadow-xs space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="flex h-2.5 w-2.5 rounded-full bg-[#b8860b]"></span>
+                <h4 className="text-xs font-bold uppercase tracking-wider text-[#b8860b]">
+                  Ao Fechar as Contas (Com Pendências)
+                </h4>
+              </div>
+              <span className="rounded-md bg-[#fff8e6] px-2 py-0.5 text-xs font-bold text-[#b8860b]">
+                Projeção Final
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 py-2 border-y border-[#f7ecd0]">
+              <div>
+                <span className="text-xs text-[#86868b] block">Faturamento Previsto Total</span>
+                <span className="text-sm font-bold text-[#1d1d1f]">
+                  R$ {periodProjectedIncome.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                </span>
+                <span className="text-[10px] text-[#86868b] block">
+                  (R$ {periodPendingIncome.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} a receber)
+                </span>
+              </div>
+              <div>
+                <span className="text-xs text-[#86868b] block">Despesas Totais Previstas</span>
+                <span className="text-sm font-bold text-[#1d1d1f]">
+                  R$ {periodProjectedExpense.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                </span>
+                <span className="text-[10px] text-[#86868b] block">
+                  (R$ {periodPendingExpense.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} a pagar)
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-end justify-between pt-1">
+              <div>
+                <span className="text-xs text-[#86868b] block">Lucro Previsto ao Fechar as Contas</span>
+                <span
+                  className={`text-2xl font-black tracking-tight ${
+                    periodProjectedProfit >= 0 ? 'text-[#1d1d1f]' : 'text-[#cf222e]'
+                  }`}
+                >
+                  R$ {periodProjectedProfit.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                </span>
+              </div>
+              <div className="text-right">
+                <span className="text-xs text-[#86868b] block">% de Lucro ao Fechar o Mês</span>
+                <span
+                  className={`text-2xl font-black ${
+                    periodProjectedProfit >= 0 ? 'text-[#1a7f37]' : 'text-[#cf222e]'
+                  }`}
+                >
+                  {periodProjectedProfitMargin.toFixed(1)}%
+                </span>
+              </div>
+            </div>
+
+            <p className="text-[11px] text-[#86868b] leading-relaxed">
+              * Quando todos os contratos a receber e despesas a pagar forem quitados, esta será a margem de lucro final do mês.
+            </p>
+          </div>
+        </div>
+
+        {/* Barra de Progresso do Fechamento */}
+        <div className="pt-2">
+          <div className="flex items-center justify-between text-xs text-[#6e6e73] mb-1.5">
+            <span>Progresso de Fechamento do Período ({periodLabel})</span>
+            <span>
+              <strong>{periodPaidTxsCount}</strong> de <strong>{periodTotalTxsCount}</strong> contas liquidadas ({periodCompletionRate}%)
+            </span>
+          </div>
+          <div className="h-2 w-full bg-[#f2f2f7] rounded-full overflow-hidden">
+            <div
+              className="h-full bg-linear-to-r from-[#1a7f37] to-[#2da44e] transition-all duration-300 rounded-full"
+              style={{ width: `${periodCompletionRate}%` }}
+            />
+          </div>
         </div>
       </div>
 
@@ -495,82 +962,11 @@ export function FinanceiroClient({
           </div>
         </div>
 
-        {/* Barra de Filtros de Período (Mês e Ano) */}
+        {/* Barra de Status e Informações do Período no Extrato */}
         <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 bg-[#fbfbfd] border-b border-[#f2f2f7]">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs font-semibold text-[#1d1d1f] flex items-center gap-1">
-              <Calendar className="h-3.5 w-3.5 text-[#b8860b]" />
-              Período:
-            </span>
-
-            <select
-              value={selectedMonth}
-              onChange={(e) => setSelectedMonth(e.target.value)}
-              className="rounded-lg border border-[#d1d1d6] bg-white px-2.5 py-1 text-xs text-[#1d1d1f] font-medium focus:outline-none cursor-pointer"
-            >
-              <option value="all">Todos os Meses</option>
-              {MONTH_NAMES.map((m) => (
-                <option key={m.value} value={m.value}>
-                  {m.label}
-                </option>
-              ))}
-            </select>
-
-            <select
-              value={selectedYear}
-              onChange={(e) => setSelectedYear(e.target.value)}
-              className="rounded-lg border border-[#d1d1d6] bg-white px-2.5 py-1 text-xs text-[#1d1d1f] font-medium focus:outline-none cursor-pointer"
-            >
-              <option value="all">Todos os Anos</option>
-              {availableYears.map((yr) => (
-                <option key={yr} value={yr}>
-                  {yr}
-                </option>
-              ))}
-            </select>
-
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedMonth(currentMonthStr)
-                setSelectedYear(currentYearStr)
-              }}
-              className={`px-2.5 py-1 text-xs font-semibold rounded-lg border transition-all cursor-pointer ${
-                isCurrentMonthSelected
-                  ? 'bg-[#1d1d1f] text-white border-[#1d1d1f]'
-                  : 'bg-white text-[#6e6e73] border-[#d1d1d6] hover:text-[#1d1d1f]'
-              }`}
-            >
-              Este Mês
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedMonth(nextMonthStr)
-                setSelectedYear(nextMonthYearStr)
-              }}
-              className={`px-2.5 py-1 text-xs font-semibold rounded-lg border transition-all cursor-pointer ${
-                isNextMonthSelected
-                  ? 'bg-[#1d1d1f] text-white border-[#1d1d1f]'
-                  : 'bg-white text-[#6e6e73] border-[#d1d1d6] hover:text-[#1d1d1f]'
-              }`}
-            >
-              Próximo Mês
-            </button>
-
-            {(selectedMonth !== 'all' || selectedYear !== 'all') && (
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedMonth('all')
-                  setSelectedYear('all')
-                }}
-                className="px-2 py-1 text-xs font-medium text-[#cf222e] hover:bg-[#feeceb] rounded-lg transition-all cursor-pointer"
-              >
-                Limpar Período
-              </button>
-            )}
+          <div className="flex items-center gap-2 text-xs text-[#1d1d1f] font-semibold">
+            <Receipt size={14} className="text-[#0071e3]" />
+            <span>Extrato Filtrado: <strong>{periodLabel}</strong></span>
           </div>
 
           <span className="text-xs text-[#86868b]">
