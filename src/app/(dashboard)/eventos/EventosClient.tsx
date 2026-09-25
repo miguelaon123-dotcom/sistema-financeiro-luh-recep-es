@@ -149,6 +149,7 @@ export function EventosClient({
   const [selectedMonth, setSelectedMonth] = useState<string>('all')
   const [selectedYear, setSelectedYear] = useState<string>('all')
   const [selectedDateFilter, setSelectedDateFilter] = useState<string>('')
+  const [filterSinal, setFilterSinal] = useState<'all' | 'pending' | 'paid'>('all')
   const [isModalOpen, setIsModalOpen] = useState(initialOpenModal)
   const [editingEvent, setEditingEvent] = useState<EventItem | null>(null)
   const [modalBudget, setModalBudget] = useState<string>('')
@@ -328,7 +329,26 @@ export function EventosClient({
     selectedYear === nextMonthYearStr
 
   const hasActiveDateFilter =
-    Boolean(selectedDateFilter) || selectedMonth !== 'all' || selectedYear !== 'all'
+    Boolean(selectedDateFilter) || selectedMonth !== 'all' || selectedYear !== 'all' || filterSinal !== 'all'
+
+  // Helper para verificar se o sinal da festa foi quitado
+  const getIsEventSinalPaid = (evt: EventItem) => {
+    return (
+      evt.deposit_status === 'paid' ||
+      evt.status === 'completed' ||
+      (evt.financial_transactions || []).some(
+        (t) => t.description?.toLowerCase().includes('sinal') && t.status === 'paid'
+      )
+    )
+  }
+
+  const pendingSinalCount = useMemo(() => {
+    return localEvents.filter((e) => !getIsEventSinalPaid(e)).length
+  }, [localEvents])
+
+  const paidSinalCount = useMemo(() => {
+    return localEvents.filter((e) => getIsEventSinalPaid(e)).length
+  }, [localEvents])
 
   // Manipuladores de Filtros de Período e Data
   const handleMonthChange = (month: string) => {
@@ -407,6 +427,7 @@ export function EventosClient({
     setSelectedDateFilter('')
     setSelectedMonth('all')
     setSelectedYear('all')
+    setFilterSinal('all')
   }
 
   // Label descritivo do período filtrado
@@ -428,7 +449,7 @@ export function EventosClient({
     return 'no total'
   }, [selectedDateFilter, selectedMonth, selectedYear])
 
-  // Filtragem de Eventos (por busca, status, mês, ano e dia específico)
+  // Filtragem de Eventos (por busca, status, sinal, mês, ano e dia específico)
   const filteredEvents = localEvents.filter((evt) => {
     const matchesSearch =
       evt.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -436,6 +457,11 @@ export function EventosClient({
       (evt.location && evt.location.toLowerCase().includes(searchTerm.toLowerCase()))
 
     const matchesStatus = filterStatus === 'all' || evt.status === filterStatus
+
+    // Filtro por Status do Sinal (Pago vs Não Pagou)
+    const isSinalPaid = getIsEventSinalPaid(evt)
+    if (filterSinal === 'pending' && isSinalPaid) return false
+    if (filterSinal === 'paid' && !isSinalPaid) return false
 
     const evtDate = evt.event_date ? evt.event_date.split('T')[0] : ''
     const parts = evtDate.split('-')
@@ -849,8 +875,8 @@ Por favor, confirmem presença com antecedência! ✅`
 
       {/* Container de Eventos */}
       <div className="rounded-2xl border border-[#e5e5ea] bg-white shadow-xs p-6">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-3">
-          <div className="relative w-full max-w-sm">
+        <div className="flex flex-col xl:flex-row xl:items-center justify-between mb-6 gap-3">
+          <div className="relative w-full xl:w-80">
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-[#86868b]" />
             <input
               type="text"
@@ -861,25 +887,86 @@ Por favor, confirmem presença com antecedência! ✅`
             />
           </div>
 
-          <div className="flex items-center gap-1.5 bg-[#f5f5f7] p-1 rounded-xl overflow-x-auto">
-            {[
-              { label: 'Todos', val: 'all' },
-              { label: 'Orçamentos', val: 'budget' },
-              { label: 'Aprovados', val: 'approved' },
-              { label: 'Realizados', val: 'completed' },
-            ].map((tab) => (
+          <div className="flex flex-wrap items-center gap-2.5">
+            {/* 🏷️ Filtro Exclusivo de Sinal (Não Pagaram vs Sinal Pago) */}
+            <div className="flex items-center gap-1 bg-[#f5f5f7] p-1 rounded-xl border border-[#e5e5ea]">
+              <span className="text-[11px] font-bold text-[#6e6e73] px-2 flex items-center gap-1">
+                <DollarSign size={13} className="text-[#b8860b]" />
+                Sinal:
+              </span>
+
               <button
-                key={tab.val}
-                onClick={() => setFilterStatus(tab.val)}
-                className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all whitespace-nowrap cursor-pointer ${
-                  filterStatus === tab.val
+                type="button"
+                onClick={() => setFilterSinal('all')}
+                className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+                  filterSinal === 'all'
                     ? 'bg-white text-[#1d1d1f] shadow-xs'
                     : 'text-[#6e6e73] hover:text-[#1d1d1f]'
                 }`}
               >
-                {tab.label}
+                Todos
               </button>
-            ))}
+
+              <button
+                type="button"
+                onClick={() => setFilterSinal('pending')}
+                className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
+                  filterSinal === 'pending'
+                    ? 'bg-[#feeceb] text-[#cf222e] font-bold shadow-xs border border-[#f8b4b1]'
+                    : 'text-[#cf222e] hover:bg-[#feeceb]/60'
+                }`}
+                title="Mostrar apenas festas cujo sinal NÃO FOI PAGO"
+              >
+                <Clock size={12} />
+                <span>Não Pagaram</span>
+                {pendingSinalCount > 0 ? (
+                  <span className="rounded-full bg-[#cf222e] text-white px-1.5 py-0.2 text-[10px] font-bold">
+                    {pendingSinalCount}
+                  </span>
+                ) : (
+                  <span className="text-[10px] font-bold text-[#86868b]">(0)</span>
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setFilterSinal('paid')}
+                className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
+                  filterSinal === 'paid'
+                    ? 'bg-[#e8f8ee] text-[#1a7f37] font-bold shadow-xs border border-[#b4e8c7]'
+                    : 'text-[#1a7f37] hover:bg-[#e8f8ee]/60'
+                }`}
+                title="Mostrar apenas festas com sinal PAGO"
+              >
+                <Check size={12} />
+                <span>Sinal Pago</span>
+                <span className="rounded-full bg-[#1a7f37] text-white px-1.5 py-0.2 text-[10px] font-bold">
+                  {paidSinalCount}
+                </span>
+              </button>
+            </div>
+
+            {/* Filtro por Status do Evento */}
+            <div className="flex items-center gap-1.5 bg-[#f5f5f7] p-1 rounded-xl overflow-x-auto border border-[#e5e5ea]">
+              {[
+                { label: 'Todos', val: 'all' },
+                { label: 'Orçamentos', val: 'budget' },
+                { label: 'Aprovados', val: 'approved' },
+                { label: 'Realizados', val: 'completed' },
+              ].map((tab) => (
+                <button
+                  key={tab.val}
+                  onClick={() => setFilterStatus(tab.val)}
+                  className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all whitespace-nowrap cursor-pointer ${
+                    filterStatus === tab.val
+                      ? 'bg-white text-[#1d1d1f] shadow-xs'
+                      : 'text-[#6e6e73] hover:text-[#1d1d1f]'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
@@ -1099,6 +1186,7 @@ Por favor, confirmem presença com antecedência! ✅`
               const contractIncomeTx = (evt.financial_transactions || []).find((t) => t.type === 'income')
               const isContractPaid =
                 contractIncomeTx?.status === 'paid' || evt.status === 'completed'
+              const isSinalPaid = getIsEventSinalPaid(evt)
               const netProfit = Number(evt.budget || 0) - staffTotalCost
 
               return (
@@ -1111,25 +1199,33 @@ Por favor, confirmem presença com antecedência! ✅`
                       <h3 className="font-semibold text-base text-[#1d1d1f] group-hover:text-[#b8860b] transition-colors leading-snug">
                         {evt.title}
                       </h3>
-                      <span
-                        className={`shrink-0 inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${
-                          evt.status === 'budget'
-                            ? 'bg-[#ebf4fe] text-[#0071e3]'
+                      <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                        {!isSinalPaid && (
+                          <span className="shrink-0 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold bg-[#feeceb] text-[#cf222e] border border-[#f8b4b1]">
+                            <Clock size={10} />
+                            Sinal Pendente
+                          </span>
+                        )}
+                        <span
+                          className={`shrink-0 inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                            evt.status === 'budget'
+                              ? 'bg-[#ebf4fe] text-[#0071e3]'
+                              : evt.status === 'approved'
+                              ? 'bg-[#e8f8ee] text-[#1a7f37]'
+                              : evt.status === 'completed'
+                              ? 'bg-[#f5f5f7] text-[#6e6e73]'
+                              : 'bg-[#feeceb] text-[#cf222e]'
+                          }`}
+                        >
+                          {evt.status === 'budget'
+                            ? 'Orçamento'
                             : evt.status === 'approved'
-                            ? 'bg-[#e8f8ee] text-[#1a7f37]'
+                            ? 'Aprovado'
                             : evt.status === 'completed'
-                            ? 'bg-[#f5f5f7] text-[#6e6e73]'
-                            : 'bg-[#feeceb] text-[#cf222e]'
-                        }`}
-                      >
-                        {evt.status === 'budget'
-                          ? 'Orçamento'
-                          : evt.status === 'approved'
-                          ? 'Aprovado'
-                          : evt.status === 'completed'
-                          ? 'Realizado'
-                          : 'Cancelado'}
-                      </span>
+                            ? 'Realizado'
+                            : 'Cancelado'}
+                        </span>
+                      </div>
                     </div>
 
                     <div className="space-y-2 text-xs text-[#6e6e73]">
