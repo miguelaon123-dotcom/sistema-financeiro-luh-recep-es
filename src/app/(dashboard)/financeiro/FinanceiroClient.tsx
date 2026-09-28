@@ -84,7 +84,7 @@ export function FinanceiroClient({
   const [filterStatus, setFilterStatus] = useState<string>('all')
   const [selectedMonth, setSelectedMonth] = useState<string>('all')
   const [selectedYear, setSelectedYear] = useState<string>('all')
-  const [dateFilterMode, setDateFilterMode] = useState<'event' | 'due'>('event')
+  const [dateFilterMode, setDateFilterMode] = useState<'due' | 'event'>('due')
   const [modalType, setModalType] = useState<'income' | 'expense' | null>(
     initialAction === 'nova-receita'
       ? 'income'
@@ -422,67 +422,6 @@ export function FinanceiroClient({
               ))}
             </select>
 
-            {/* Atalhos Rápidos */}
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedMonth(currentMonthStr)
-                setSelectedYear(currentYearStr)
-              }}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-xl border transition-all cursor-pointer ${
-                isCurrentMonthSelected
-                  ? 'bg-[#1d1d1f] text-white border-[#1d1d1f] shadow-xs'
-                  : 'bg-white text-[#6e6e73] border-[#d1d1d6] hover:text-[#1d1d1f] hover:bg-[#f5f5f7]'
-              }`}
-            >
-              Este Mês
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedMonth(nextMonthStr)
-                setSelectedYear(nextMonthYearStr)
-              }}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-xl border transition-all cursor-pointer ${
-                isNextMonthSelected
-                  ? 'bg-[#1d1d1f] text-white border-[#1d1d1f] shadow-xs'
-                  : 'bg-white text-[#6e6e73] border-[#d1d1d6] hover:text-[#1d1d1f] hover:bg-[#f5f5f7]'
-              }`}
-            >
-              Próximo Mês
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedMonth('11')
-                setSelectedYear('2026')
-              }}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-xl border transition-all cursor-pointer ${
-                selectedMonth === '11' && selectedYear === '2026'
-                  ? 'bg-[#b8860b] text-white border-[#b8860b] shadow-xs'
-                  : 'bg-[#fffdf5] text-[#b8860b] border-[#f0e6cc] hover:bg-[#fff9e6]'
-              }`}
-            >
-              Novembro/26
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedMonth('12')
-                setSelectedYear('2026')
-              }}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-xl border transition-all cursor-pointer ${
-                selectedMonth === '12' && selectedYear === '2026'
-                  ? 'bg-[#1a7f37] text-white border-[#1a7f37] shadow-xs'
-                  : 'bg-[#f0fdf4] text-[#1a7f37] border-[#b4e8c7] hover:bg-[#dcfce7]'
-              }`}
-            >
-              Dezembro/26
-            </button>
-
             {isPeriodFiltered && (
               <button
                 type="button"
@@ -498,8 +437,20 @@ export function FinanceiroClient({
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            {/* Seletor de Modo: Por Mês da Festa (Evento) vs Data de Vencimento */}
+            {/* Seletor de Modo: Por Data de Vencimento/Quitação (Caixa) vs Mês da Festa (Evento) */}
             <div className="flex items-center gap-1 bg-[#f5f5f7] p-1 rounded-xl">
+              <button
+                type="button"
+                onClick={() => setDateFilterMode('due')}
+                className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+                  dateFilterMode === 'due'
+                    ? 'bg-white text-[#1d1d1f] shadow-xs'
+                    : 'text-[#6e6e73] hover:text-[#1d1d1f]'
+                }`}
+                title="Agrupa pela data de vencimento / quitação da parcela (Fluxo de Caixa Real)"
+              >
+                📅 Vencimento / Quitação (Caixa)
+              </button>
               <button
                 type="button"
                 onClick={() => setDateFilterMode('event')}
@@ -511,18 +462,6 @@ export function FinanceiroClient({
                 title="Agrupa pelo mês da festa/evento (Recomendado para contratos de buffet)"
               >
                 🎉 Mês do Evento (Festas)
-              </button>
-              <button
-                type="button"
-                onClick={() => setDateFilterMode('due')}
-                className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
-                  dateFilterMode === 'due'
-                    ? 'bg-white text-[#1d1d1f] shadow-xs'
-                    : 'text-[#6e6e73] hover:text-[#1d1d1f]'
-                }`}
-                title="Agrupa pela data de vencimento / quitação da parcela"
-              >
-                📅 Vencimento / Quitação
               </button>
             </div>
 

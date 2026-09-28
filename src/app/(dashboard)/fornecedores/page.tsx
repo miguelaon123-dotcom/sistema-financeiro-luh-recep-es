@@ -53,7 +53,7 @@ export default async function FornecedoresPage({
       events={events}
       caixinhas={caixinhas}
       initialAction={params.action}
-      initialTab={params.tab}
+      initialTab={params.tab || 'fornecedores'}
     />
   )
 }

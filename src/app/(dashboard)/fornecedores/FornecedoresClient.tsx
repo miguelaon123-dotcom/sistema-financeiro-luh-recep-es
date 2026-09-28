@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition, useMemo } from 'react'
+import { useState, useTransition, useMemo, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   Truck,
@@ -26,6 +26,9 @@ import {
   MessageCircle,
   ChevronLeft,
   ChevronRight,
+  QrCode,
+  Copy,
+  Check,
 } from 'lucide-react'
 import {
   createSupplier,
@@ -69,18 +72,18 @@ export function FornecedoresClient({
   events,
   caixinhas,
   initialAction,
-  initialTab = 'contas',
+  initialTab = 'fornecedores',
 }: {
   suppliers: Supplier[]
   transactions: SupplierTransaction[]
   events: { id: string; title: string }[]
-  caixinhas: Caixinha[]
+  caixinhas?: Caixinha[]
   initialAction?: string
   initialTab?: string
 }) {
   const router = useRouter()
-  const [activeTab, setActiveTab] = useState<'contas' | 'fornecedores'>(
-    initialTab === 'fornecedores' ? 'fornecedores' : 'contas'
+  const [activeTab, setActiveTab] = useState<'fornecedores' | 'contas'>(
+    initialTab === 'contas' ? 'contas' : 'fornecedores'
   )
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'paid'>('all')
@@ -92,12 +95,17 @@ export function FornecedoresClient({
   const [selectedDateFilter, setSelectedDateFilter] = useState<string>('')
 
   // Modais
+  const [localSuppliers, setLocalSuppliers] = useState<Supplier[]>(suppliers)
+  const [copiedPixId, setCopiedPixId] = useState<string | null>(null)
+
+  useEffect(() => {
+    setLocalSuppliers(suppliers)
+  }, [suppliers])
+
   const [supplierModalOpen, setSupplierModalOpen] = useState(initialAction === 'novo-fornecedor')
   const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null)
   const [billModalOpen, setBillModalOpen] = useState(initialAction === 'nova-conta')
   const [selectedSupplierForBill, setSelectedSupplierForBill] = useState<string>('')
-  const [caixinhaModalOpen, setCaixinhaModalOpen] = useState(false)
-  const [caixinhaActionType, setCaixinhaActionType] = useState<'deposit' | 'withdraw'>('deposit')
 
   const [isPending, startTransition] = useTransition()
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null)
@@ -105,18 +113,32 @@ export function FornecedoresClient({
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
   const { confirm, ConfirmDialog } = useConfirm()
 
-  // Caixa de Fornecedores
-  const fornecedorCaixinha = caixinhas.find((c) => c.category === 'fornecedores' || c.name.toLowerCase().includes('fornecedor')) || {
-    id: '55555555-5555-4555-8555-555555555555',
-    name: 'Caixa de Fornecedores',
-    current_balance: 0,
-    target_balance: 5000,
-    category: 'fornecedores',
-    color: '#d97706',
-    icon: 'truck',
+  // Formatadores visuais
+  const formatPhone = (phone?: string | null) => {
+    if (!phone) return ''
+    const clean = phone.replace(/\D/g, '')
+    if (clean.length === 11) {
+      return `(${clean.slice(0, 2)}) ${clean.slice(2, 7)}-${clean.slice(7)}`
+    }
+    if (clean.length === 10) {
+      return `(${clean.slice(0, 2)}) ${clean.slice(2, 6)}-${clean.slice(6)}`
+    }
+    return phone
   }
 
-  // Filtrar apenas despesas ligadas a fornecedores (ou despesas operacionais)
+  const formatDoc = (doc?: string | null) => {
+    if (!doc) return ''
+    const clean = doc.replace(/\D/g, '')
+    if (clean.length === 14) {
+      return `${clean.slice(0, 2)}.${clean.slice(2, 5)}.${clean.slice(5, 8)}/${clean.slice(8, 12)}-${clean.slice(12)}`
+    }
+    if (clean.length === 11) {
+      return `${clean.slice(0, 3)}.${clean.slice(3, 6)}.${clean.slice(6, 9)}-${clean.slice(9)}`
+    }
+    return doc
+  }
+
+  // Filtrar apenas despesas ligadas a fornecedores
   const supplierTxs = transactions.filter((t) => t.type === 'expense')
 
   // Cálculos consolidados
@@ -124,10 +146,6 @@ export function FornecedoresClient({
   const totalPendingAmount = pendingBills.reduce((acc, t) => acc + Number(t.amount || 0), 0)
   const paidBills = supplierTxs.filter((t) => t.status === 'paid')
   const totalPaidAmount = paidBills.reduce((acc, t) => acc + Number(t.amount || 0), 0)
-
-  const caixinhaBalance = Number(fornecedorCaixinha.current_balance || 0)
-  const coveragePercent = totalPendingAmount > 0 ? Math.min(100, Math.round((caixinhaBalance / totalPendingAmount) * 100)) : 100
-  const isFullyCovered = caixinhaBalance >= totalPendingAmount && totalPendingAmount > 0
 
   // Lista de Meses
   const MONTH_NAMES = [
@@ -317,7 +335,7 @@ export function FornecedoresClient({
   }, [filteredBills])
 
   // Filtragem do catálogo de fornecedores
-  const filteredSuppliers = suppliers.filter((s) => {
+  const filteredSuppliers = localSuppliers.filter((s) => {
     const term = searchTerm.toLowerCase()
     return (
       s.name.toLowerCase().includes(term) ||
@@ -341,8 +359,18 @@ export function FornecedoresClient({
       if (res?.error) {
         setErrorMessage(res.error)
       } else {
+        if (res?.supplier) {
+          if (editingSupplier) {
+            setLocalSuppliers((prev) =>
+              prev.map((s) => (s.id === res.supplier.id ? res.supplier : s))
+            )
+          } else {
+            setLocalSuppliers((prev) => [res.supplier, ...prev])
+          }
+        }
         setSupplierModalOpen(false)
         setEditingSupplier(null)
+        setActiveTab('fornecedores') // Garante que a tela mude imediatamente para a aba de fornecedores
         setSuccessMessage('Fornecedor salvo com sucesso!')
         setTimeout(() => setSuccessMessage(null), 3000)
         router.refresh()
@@ -355,6 +383,7 @@ export function FornecedoresClient({
       if (!ok) return
       setActionLoadingId(id)
       startTransition(async () => {
+        setLocalSuppliers((prev) => prev.filter((s) => s.id !== id))
         const res = await deleteSupplier(id)
         if (res?.error) alert(res.error)
         setActionLoadingId(null)
@@ -408,32 +437,7 @@ export function FornecedoresClient({
     })
   }
 
-  const handleCaixinhaMovement = (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault()
-    setErrorMessage(null)
-    const formData = new FormData(e.currentTarget)
-    formData.append('id', fornecedorCaixinha.id)
 
-    startTransition(async () => {
-      const res =
-        caixinhaActionType === 'deposit'
-          ? await depositToCaixinha(formData)
-          : await withdrawFromCaixinha(formData)
-
-      if (res?.error) {
-        setErrorMessage(res.error)
-      } else {
-        setCaixinhaModalOpen(false)
-        setSuccessMessage(
-          caixinhaActionType === 'deposit'
-            ? 'Valor guardado no Caixa de Fornecedores com sucesso!'
-            : 'Valor resgatado do Caixa de Fornecedores com sucesso!'
-        )
-        setTimeout(() => setSuccessMessage(null), 3000)
-        router.refresh()
-      }
-    })
-  }
 
   return (
     <div className="space-y-6">
@@ -486,136 +490,114 @@ export function FornecedoresClient({
         </div>
       )}
 
-      {/* KPI Cards & Caixa Especial de Fornecedores */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {/* 1. A Pagar a Fornecedores (Pendente) */}
-        <div className="rounded-2xl border border-[#e5e5ea] bg-white p-5 shadow-xs">
+      {/* 3 KPI Cards Rápidos e Visuais */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        {/* 1. Fornecedores Cadastrados */}
+        <div
+          onClick={() => setActiveTab('fornecedores')}
+          className={`rounded-2xl border p-5 transition-all cursor-pointer shadow-xs ${
+            activeTab === 'fornecedores'
+              ? 'border-[#f59e0b] bg-gradient-to-br from-[#fffdf5] to-[#fef3c7] ring-2 ring-[#f59e0b]/30 shadow-sm'
+              : 'border-[#fed7aa] bg-gradient-to-br from-[#fffdfa] to-[#fff7ed] hover:border-[#f59e0b]'
+          }`}
+        >
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-[#cf222e]">
-              A Pagar (Pendente)
+            <span className="text-xs font-bold uppercase tracking-wider text-[#b45309]">
+              Fornecedores Parceiros
             </span>
-            <span className="rounded-md bg-[#feeceb] px-1.5 py-0.5 text-[10px] font-bold text-[#cf222e]">
-              {pendingBills.length} {pendingBills.length === 1 ? 'conta' : 'contas'}
+            <span className="rounded-full bg-[#fde68a] px-2 py-0.5 text-xs font-bold text-[#92400e]">
+              {localSuppliers.length} ativos
             </span>
           </div>
-          <p className="mt-2 text-2xl font-bold tracking-tight text-[#cf222e]">
-            R$ {totalPendingAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+          <p className="mt-2 text-3xl font-bold tracking-tight text-[#b45309]">
+            {localSuppliers.length}
           </p>
-          <span className="mt-1 block text-xs text-[#86868b]">
-            Boletos e compras a liquidar
+          <span className="mt-1 block text-xs text-[#b45309]/80 font-medium">
+            Clique para ver a lista visual de parceiros
           </span>
         </div>
 
-        {/* 2. Caixa Especial de Fornecedores (Reserva) */}
-        <div className="rounded-2xl border-2 border-[#d97706]/30 bg-gradient-to-br from-[#fffdfa] to-[#fff8ee] p-5 shadow-xs relative overflow-hidden">
+        {/* 2. A Pagar a Fornecedores (Pendente) */}
+        <div
+          onClick={() => {
+            setStatusFilter('pending')
+            setActiveTab('contas')
+          }}
+          className={`rounded-2xl border p-5 transition-all cursor-pointer shadow-xs ${
+            activeTab === 'contas' && statusFilter === 'pending'
+              ? 'border-[#cf222e] bg-white ring-2 ring-[#cf222e]/10'
+              : 'border-[#e5e5ea] bg-white hover:border-[#cf222e]/40'
+          }`}
+        >
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-1.5">
-              <div className="rounded-lg bg-[#fef3c7] p-1 text-[#d97706]">
-                <Truck size={14} />
-              </div>
-              <span className="text-xs font-bold uppercase tracking-wider text-[#b45309]">
-                Caixa de Fornecedores
-              </span>
-            </div>
-            <span
-              className={`rounded-md px-1.5 py-0.5 text-[10px] font-bold ${
-                isFullyCovered
-                  ? 'bg-[#e8f8ee] text-[#1a7f37]'
-                  : caixinhaBalance > 0
-                  ? 'bg-[#fef3c7] text-[#b45309]'
-                  : 'bg-[#feeceb] text-[#cf222e]'
-              }`}
-            >
-              {isFullyCovered ? '✓ 100% Coberto' : `${coveragePercent}% Coberto`}
+            <span className="text-xs font-bold uppercase tracking-wider text-[#cf222e]">
+              A Pagar (Pendente)
+            </span>
+            <span className="rounded-full bg-[#feeceb] px-2 py-0.5 text-[11px] font-bold text-[#cf222e]">
+              {pendingBills.length} {pendingBills.length === 1 ? 'conta' : 'contas'}
             </span>
           </div>
-
-          <p className="mt-2 text-2xl font-bold tracking-tight text-[#1d1d1f]">
-            R$ {caixinhaBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+          <p className="mt-2 text-3xl font-bold tracking-tight text-[#cf222e]">
+            R$ {totalPendingAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
           </p>
-
-          <div className="mt-2 flex items-center justify-between gap-2">
-            <span className="text-[11px] text-[#6e6e73]">
-              {totalPendingAmount > 0
-                ? isFullyCovered
-                  ? 'Saldo suficiente para todos os boletos'
-                  : `Faltam R$ ${(Math.max(0, totalPendingAmount - caixinhaBalance)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
-                : 'Nenhum boleto pendente'}
-            </span>
-            <button
-              onClick={() => {
-                setErrorMessage(null)
-                setCaixinhaActionType('deposit')
-                setCaixinhaModalOpen(true)
-              }}
-              className="rounded-lg bg-[#d97706] hover:bg-[#b45309] text-white px-2 py-1 text-[11px] font-semibold transition-all cursor-pointer shadow-2xs"
-            >
-              + Guardar
-            </button>
-          </div>
+          <span className="mt-1 block text-xs text-[#86868b]">
+            Boletos e notas de insumos a liquidar
+          </span>
         </div>
 
         {/* 3. Total Já Pago */}
-        <div className="rounded-2xl border border-[#e5e5ea] bg-white p-5 shadow-xs">
+        <div
+          onClick={() => {
+            setStatusFilter('paid')
+            setActiveTab('contas')
+          }}
+          className={`rounded-2xl border p-5 transition-all cursor-pointer shadow-xs ${
+            activeTab === 'contas' && statusFilter === 'paid'
+              ? 'border-[#1a7f37] bg-white ring-2 ring-[#1a7f37]/10'
+              : 'border-[#e5e5ea] bg-white hover:border-[#1a7f37]/40'
+          }`}
+        >
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-[#1a7f37]">
+            <span className="text-xs font-bold uppercase tracking-wider text-[#1a7f37]">
               Total Já Pago
             </span>
-            <span className="rounded-md bg-[#e8f8ee] px-1.5 py-0.5 text-[10px] font-bold text-[#1a7f37]">
-              {paidBills.length} liquidados
+            <span className="rounded-full bg-[#e8f8ee] px-2 py-0.5 text-[11px] font-bold text-[#1a7f37]">
+              {paidBills.length} pagos
             </span>
           </div>
-          <p className="mt-2 text-2xl font-bold tracking-tight text-[#1a7f37]">
+          <p className="mt-2 text-3xl font-bold tracking-tight text-[#1a7f37]">
             R$ {totalPaidAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
           </p>
           <span className="mt-1 block text-xs text-[#86868b]">
             Histórico quitado a fornecedores
           </span>
         </div>
-
-        {/* 4. Fornecedores Cadastrados */}
-        <div className="rounded-2xl border border-[#e5e5ea] bg-white p-5 shadow-xs">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-[#1d1d1f]">
-              Parceiros Ativos
-            </span>
-            <span className="rounded-md bg-[#f5f5f7] px-1.5 py-0.5 text-[10px] font-bold text-[#1d1d1f]">
-              {suppliers.length}
-            </span>
-          </div>
-          <p className="mt-2 text-2xl font-bold tracking-tight text-[#1d1d1f]">
-            {suppliers.length} {suppliers.length === 1 ? 'Fornecedor' : 'Fornecedores'}
-          </p>
-          <span className="mt-1 block text-xs text-[#86868b]">
-            Bebidas, buffet, materiais e serviços
-          </span>
-        </div>
       </div>
 
-      {/* Abas de Navegação */}
+      {/* Abas de Navegação (Fornecedores primeiro por padrão!) */}
       <div className="flex items-center gap-2 border-b border-[#f2f2f7] pb-3">
         <button
-          onClick={() => setActiveTab('contas')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-            activeTab === 'contas'
-              ? 'bg-[#1d1d1f] text-white shadow-xs'
-              : 'text-[#6e6e73] hover:bg-[#f5f5f7] hover:text-[#1d1d1f]'
-          }`}
-        >
-          <DollarSign size={15} />
-          <span>Contas & Boletos a Pagar ({supplierTxs.length})</span>
-        </button>
-
-        <button
           onClick={() => setActiveTab('fornecedores')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
             activeTab === 'fornecedores'
               ? 'bg-[#1d1d1f] text-white shadow-xs'
               : 'text-[#6e6e73] hover:bg-[#f5f5f7] hover:text-[#1d1d1f]'
           }`}
         >
-          <Building2 size={15} />
-          <span>Catálogo de Fornecedores ({suppliers.length})</span>
+          <Building2 size={16} />
+          <span>👥 Fornecedores Cadastrados ({localSuppliers.length})</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('contas')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+            activeTab === 'contas'
+              ? 'bg-[#1d1d1f] text-white shadow-xs'
+              : 'text-[#6e6e73] hover:bg-[#f5f5f7] hover:text-[#1d1d1f]'
+          }`}
+        >
+          <DollarSign size={16} />
+          <span>📄 Todas as Contas & Boletos a Pagar ({supplierTxs.length})</span>
         </button>
       </div>
 
@@ -643,7 +625,7 @@ export function FornecedoresClient({
                 className="bg-[#f5f5f7] border border-transparent rounded-xl px-3 py-1.5 text-xs text-[#1d1d1f] focus:border-[#1d1d1f] focus:bg-white focus:outline-none transition-all"
               >
                 <option value="all">Todos os Fornecedores</option>
-                {suppliers.map((s) => (
+                {localSuppliers.map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.name}
                   </option>
@@ -683,6 +665,81 @@ export function FornecedoresClient({
               </div>
             </div>
           </div>
+
+          {/* Destaque Visual do Fornecedor Filtrado */}
+          {supplierFilter !== 'all' && (() => {
+            const activeSupp = localSuppliers.find((s) => s.id === supplierFilter)
+            if (!activeSupp) return null
+            const suppPending = supplierTxs.filter((t) => t.contact_id === activeSupp.id && t.status === 'pending').reduce((acc, t) => acc + Number(t.amount || 0), 0)
+            const cleanPh = activeSupp.phone ? activeSupp.phone.replace(/\D/g, '') : ''
+            const pix = activeSupp.document || (activeSupp.notes?.startsWith('Chave PIX: ') ? activeSupp.notes.replace('Chave PIX: ', '') : null)
+
+            return (
+              <div className="rounded-2xl border border-[#fed7aa] bg-gradient-to-r from-[#fffbeb] to-[#fef3c7] p-4.5 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                <div className="flex items-center gap-3.5">
+                  <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#f59e0b] to-[#d97706] text-white font-extrabold text-lg flex items-center justify-center shrink-0 shadow-xs ring-2 ring-[#fde68a]">
+                    {activeSupp.name.charAt(0).toUpperCase()}
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h4 className="font-bold text-base text-[#78350f]">{activeSupp.name}</h4>
+                      <button
+                        onClick={() => setSupplierFilter('all')}
+                        className="text-[11px] font-bold text-[#b45309] hover:underline cursor-pointer bg-[#fde68a] px-2 py-0.5 rounded-full"
+                      >
+                        (Mostrar todos)
+                      </button>
+                    </div>
+                    <div className="flex items-center gap-3 text-xs text-[#92400e] mt-1.5 flex-wrap">
+                      {activeSupp.phone && (
+                        <span className="flex items-center gap-1 font-semibold text-[#1f2937] bg-white/70 px-2 py-0.5 rounded-lg border border-[#fde68a]">
+                          <Phone size={12} className="text-[#1a7f37]" />
+                          {formatPhone(activeSupp.phone)}
+                        </span>
+                      )}
+                      {cleanPh.length >= 10 && (
+                        <a
+                          href={`https://wa.me/55${cleanPh}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1 text-[11px] font-bold text-white hover:opacity-90 bg-[#16a34a] px-2.5 py-1 rounded-lg shadow-2xs"
+                        >
+                          <MessageCircle size={12} />
+                          WhatsApp
+                        </a>
+                      )}
+                      {pix && (
+                        <span className="flex items-center gap-1.5 bg-[#eff6ff] px-2.5 py-1 rounded-lg border border-[#bfdbfe] text-[#1e40af]">
+                          <QrCode size={12} className="text-[#2563eb]" />
+                          PIX: <strong className="font-mono text-[#1e40af]">{formatDoc(pix)}</strong>
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3 w-full sm:w-auto">
+                  <div className="text-right hidden sm:block">
+                    <span className="text-[10px] font-bold text-[#86868b] block uppercase">Pendente</span>
+                    <span className="font-bold text-sm text-[#cf222e]">
+                      R$ {suppPending.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setErrorMessage(null)
+                      setSelectedSupplierForBill(activeSupp.id)
+                      setBillModalOpen(true)
+                    }}
+                    className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 rounded-xl bg-[#1d1d1f] hover:bg-black text-white px-4 py-2 text-xs font-bold shadow-xs transition-colors cursor-pointer"
+                  >
+                    <Plus size={14} />
+                    <span>Lançar Conta</span>
+                  </button>
+                </div>
+              </div>
+            )
+          })()}
 
           {/* Barra de Filtros de Período (Mês, Ano e Dia) - Padrão Degustação & Eventos */}
           <div className="p-4 rounded-2xl bg-[#fbfbfd] border border-[#e5e5ea] space-y-3.5 shadow-2xs">
@@ -1007,7 +1064,29 @@ export function FornecedoresClient({
                   ) : (
                     <tr>
                       <td colSpan={6} className="px-5 py-12 text-center text-[#86868b]">
-                        Nenhuma conta ou boleto de fornecedor encontrado.
+                        {supplierFilter !== 'all' ? (
+                          <div className="space-y-2">
+                            <p className="font-semibold text-sm text-[#1d1d1f]">
+                              Nenhuma conta encontrada para este fornecedor.
+                            </p>
+                            <p className="text-xs text-[#86868b]">
+                              O fornecedor está cadastrado, mas ainda não possui nenhum boleto ou nota pendente.
+                            </p>
+                            <button
+                              onClick={() => {
+                                setErrorMessage(null)
+                                setSelectedSupplierForBill(supplierFilter)
+                                setBillModalOpen(true)
+                              }}
+                              className="mt-2 inline-flex items-center gap-1.5 rounded-xl bg-[#1d1d1f] hover:bg-black text-white px-3.5 py-1.5 text-xs font-semibold shadow-xs cursor-pointer"
+                            >
+                              <Plus size={14} />
+                              <span>Lançar Primeira Conta</span>
+                            </button>
+                          </div>
+                        ) : (
+                          'Nenhuma conta ou boleto de fornecedor encontrado.'
+                        )}
                       </td>
                     </tr>
                   )}
@@ -1044,31 +1123,48 @@ export function FornecedoresClient({
                 const sPaid = sTxs.filter((t) => t.status === 'paid').reduce((acc, t) => acc + Number(t.amount || 0), 0)
 
                 const cleanPhone = s.phone ? s.phone.replace(/\D/g, '') : ''
+                const pixKey = s.document || (s.notes?.startsWith('Chave PIX: ') ? s.notes.replace('Chave PIX: ', '') : null)
+                const otherNotes = s.notes && !s.notes.startsWith('Chave PIX: ') ? s.notes : null
 
                 return (
                   <div
                     key={s.id}
-                    className="rounded-2xl border border-[#e5e5ea] bg-white p-5 shadow-xs hover:border-[#1d1d1f]/30 transition-all flex flex-col justify-between"
+                    className="rounded-2xl border border-[#fed7aa] bg-gradient-to-b from-[#fffefc] to-[#fff7ed] p-5 shadow-xs hover:border-[#f59e0b] hover:shadow-md transition-all flex flex-col justify-between relative overflow-hidden group"
                   >
+                    <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-[#f59e0b] via-[#ea580c] to-[#d97706]" />
                     <div>
-                      <div className="flex items-start justify-between gap-2 mb-3">
-                        <div>
-                          <h3 className="font-bold text-base text-[#1d1d1f]">{s.name}</h3>
-                          {s.document && (
-                            <span className="text-[11px] text-[#86868b] block">
-                              Doc/CNPJ: {s.document}
+                      {/* Topo do Card com Avatar e Nome */}
+                      <div className="flex items-start justify-between gap-3 mb-4">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-[#f59e0b] to-[#d97706] text-white font-extrabold text-base flex items-center justify-center shrink-0 shadow-xs ring-2 ring-[#fde68a]">
+                            {s.name.charAt(0).toUpperCase()}
+                          </div>
+                          <div className="min-w-0">
+                            <h3 className="font-bold text-base text-[#78350f] truncate" title={s.name}>
+                              {s.name}
+                            </h3>
+                            <span className="text-[11px] block mt-0.5">
+                              {sPending > 0 ? (
+                                <span className="font-bold text-[#cf222e] bg-[#feeceb] px-2 py-0.5 rounded-full inline-block">
+                                  R$ {sPending.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} a pagar
+                                </span>
+                              ) : (
+                                <span className="font-semibold text-[#1a7f37] bg-[#e8f8ee] px-2 py-0.5 rounded-full inline-block">
+                                  ✓ Sem pendências
+                                </span>
+                              )}
                             </span>
-                          )}
+                          </div>
                         </div>
 
-                        <div className="flex items-center gap-1">
+                        <div className="flex items-center gap-1 shrink-0">
                           <button
                             onClick={() => {
                               setErrorMessage(null)
                               setEditingSupplier(s)
                               setSupplierModalOpen(true)
                             }}
-                            className="rounded-lg p-1.5 text-[#86868b] hover:bg-[#f5f5f7] hover:text-[#1d1d1f] transition-colors cursor-pointer"
+                            className="rounded-lg p-1.5 text-[#86868b] hover:bg-[#fed7aa]/50 hover:text-[#78350f] transition-colors cursor-pointer"
                             title="Editar fornecedor"
                           >
                             <Pencil size={15} />
@@ -1084,79 +1180,133 @@ export function FornecedoresClient({
                       </div>
 
                       {/* Informações de Contato e Chave PIX */}
-                      <div className="space-y-1.5 text-xs text-[#6e6e73] mb-4">
+                      <div className="space-y-2.5 text-xs text-[#6e6e73] mb-4">
                         {s.phone && (
-                          <div className="flex items-center justify-between">
-                            <span className="flex items-center gap-1.5">
-                              <Phone size={13} className="text-[#86868b]" />
-                              <span>{s.phone}</span>
+                          <div className="flex items-center justify-between bg-[#f0fdf4] p-2 rounded-xl border border-[#bbf7d0]">
+                            <span className="flex items-center gap-1.5 font-semibold text-[#166534]">
+                              <Phone size={13} className="text-[#16a34a]" />
+                              <span>{formatPhone(s.phone)}</span>
                             </span>
                             {cleanPhone.length >= 10 && (
                               <a
                                 href={`https://wa.me/55${cleanPhone}`}
                                 target="_blank"
                                 rel="noreferrer"
-                                className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#1a7f37] hover:underline bg-[#e8f8ee] px-2 py-0.5 rounded"
+                                className="inline-flex items-center gap-1 text-[11px] font-bold text-white hover:opacity-90 bg-[#16a34a] px-2.5 py-1 rounded-lg transition-colors shadow-2xs"
                               >
-                                <MessageCircle size={12} />
+                                <MessageCircle size={13} />
                                 WhatsApp
                               </a>
                             )}
                           </div>
                         )}
 
+                        {/* Chave PIX com botão de copiar em um clique */}
+                        {pixKey && (
+                          <div className="flex items-center justify-between p-2.5 rounded-xl bg-[#eff6ff] border border-[#bfdbfe] text-xs">
+                            <div className="flex items-center gap-2 min-w-0 pr-2">
+                              <QrCode size={14} className="text-[#2563eb] shrink-0" />
+                              <div className="min-w-0">
+                                <span className="text-[10px] font-bold text-[#1d4ed8] block uppercase">Chave PIX:</span>
+                                <span className="font-mono text-xs font-bold text-[#1e40af] truncate block" title={pixKey}>
+                                  {formatDoc(pixKey)}
+                                </span>
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                navigator.clipboard.writeText(pixKey)
+                                setCopiedPixId(s.id)
+                                setTimeout(() => setCopiedPixId(null), 2000)
+                              }}
+                              className={`shrink-0 px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors shadow-2xs ${
+                                copiedPixId === s.id
+                                  ? 'bg-[#16a34a] text-white'
+                                  : 'bg-[#2563eb] hover:bg-[#1d4ed8] text-white'
+                              }`}
+                              title="Copiar Chave PIX"
+                            >
+                              {copiedPixId === s.id ? (
+                                <>
+                                  <Check size={12} className="text-white" />
+                                  <span>Copiado!</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Copy size={12} className="text-white" />
+                                  <span>Copiar</span>
+                                </>
+                              )}
+                            </button>
+                          </div>
+                        )}
+
                         {s.email && (
-                          <div className="flex items-center gap-1.5">
-                            <Mail size={13} className="text-[#86868b]" />
+                          <div className="flex items-center gap-1.5 text-[#92400e] px-1 font-medium">
+                            <Mail size={13} className="text-[#b45309]" />
                             <span className="truncate">{s.email}</span>
                           </div>
                         )}
 
-                        {s.notes && (
-                          <div className="mt-2 p-2 bg-[#fbfbfd] rounded-xl border border-[#f2f2f7] text-[11px] text-[#1d1d1f]">
-                            <span className="font-bold block text-[#86868b] text-[10px] uppercase">PIX / Dados / Observações:</span>
-                            <span>{s.notes}</span>
+                        {otherNotes && (
+                          <div className="p-2.5 bg-[#fefce8] rounded-xl border border-[#fef08a] text-[11px] text-[#713f12]">
+                            <span className="font-bold block text-[#854d0e] text-[10px] uppercase">Observações:</span>
+                            <span>{otherNotes}</span>
                           </div>
                         )}
                       </div>
                     </div>
 
-                    {/* Resumo Financeiro do Fornecedor */}
-                    <div className="pt-3 border-t border-[#f2f2f7]">
-                      <div className="grid grid-cols-2 gap-2 text-xs mb-3">
+                    {/* Resumo Financeiro & Ações */}
+                    <div className="pt-3 border-t border-[#fed7aa]/50 space-y-2.5">
+                      <div className="grid grid-cols-2 gap-2 text-xs">
                         <div className="p-2 bg-[#fff8e6] rounded-xl border border-[#fee4a6]">
                           <span className="text-[10px] font-bold text-[#b8860b] block uppercase">Pendente</span>
-                          <span className="font-bold text-[#b8860b]">
+                          <span className="font-bold text-xs text-[#b8860b]">
                             R$ {sPending.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                           </span>
                         </div>
 
                         <div className="p-2 bg-[#e8f8ee] rounded-xl border border-[#b4e8c7]">
                           <span className="text-[10px] font-bold text-[#1a7f37] block uppercase">Já Pago</span>
-                          <span className="font-bold text-[#1a7f37]">
+                          <span className="font-bold text-xs text-[#1a7f37]">
                             R$ {sPaid.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                           </span>
                         </div>
                       </div>
 
-                      <button
-                        onClick={() => {
-                          setErrorMessage(null)
-                          setSelectedSupplierForBill(s.id)
-                          setBillModalOpen(true)
-                        }}
-                        className="w-full flex items-center justify-center gap-1.5 rounded-xl bg-[#f5f5f7] hover:bg-[#e5e5ea] py-2 text-xs font-semibold text-[#1d1d1f] transition-colors cursor-pointer"
-                      >
-                        <Plus size={14} />
-                        <span>Lançar Conta para {s.name.split(' ')[0]}</span>
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => {
+                            setErrorMessage(null)
+                            setSelectedSupplierForBill(s.id)
+                            setBillModalOpen(true)
+                          }}
+                          className="flex-1 flex items-center justify-center gap-1.5 rounded-xl bg-[#d97706] hover:bg-[#b45309] py-2.5 text-xs font-bold text-white transition-all shadow-xs cursor-pointer"
+                        >
+                          <Plus size={14} />
+                          <span>+ Lançar Boleto</span>
+                        </button>
+
+                        <button
+                          onClick={() => {
+                            setSupplierFilter(s.id)
+                            setActiveTab('contas')
+                          }}
+                          className="flex items-center justify-center gap-1 rounded-xl bg-[#fef3c7] hover:bg-[#fde68a] border border-[#fde68a] px-3 py-2.5 text-xs font-bold text-[#92400e] transition-colors cursor-pointer"
+                          title="Ver histórico de contas"
+                        >
+                          <span>Contas ({sTxs.length})</span>
+                        </button>
+                      </div>
                     </div>
                   </div>
                 )
               })
             ) : (
               <div className="col-span-full rounded-2xl border border-[#e5e5ea] bg-white p-12 text-center text-[#86868b]">
-                Nenhum fornecedor cadastrado ainda. Clique em "+ Novo Fornecedor" para adicionar parceiros de bebidas, louças, buffet ou iluminação.
+                Nenhum fornecedor encontrado para esta busca.
               </div>
             )}
           </div>
@@ -1201,71 +1351,73 @@ export function FornecedoresClient({
             <form onSubmit={handleSaveSupplier} className="mt-4 space-y-4">
               {editingSupplier && <input type="hidden" name="id" value={editingSupplier.id} />}
 
+              {/* 1. Nome do Fornecedor */}
               <div>
-                <label className="block text-xs font-semibold text-[#1d1d1f] mb-1">
-                  Nome ou Razão Social *
+                <label className="block text-xs font-bold text-[#1d1d1f] mb-1.5">
+                  Nome do Fornecedor / Empresa *
                 </label>
                 <input
                   type="text"
                   name="name"
                   required
+                  autoFocus
                   defaultValue={editingSupplier?.name || ''}
-                  placeholder="Ex: Distribuidora de Bebidas Prime ou Floricultura Rosa Real"
-                  className="w-full rounded-xl border border-[#d1d1d6] bg-white px-3.5 py-2 text-sm text-[#1d1d1f] placeholder-[#86868b] focus:border-[#1d1d1f] focus:outline-none focus:ring-1 focus:ring-[#1d1d1f] transition-all"
+                  placeholder="Ex: DJ Marcos, Buffet Requinte, Distribuidora Prime..."
+                  className="w-full rounded-xl border border-[#d1d1d6] bg-white px-3.5 py-2.5 text-sm text-[#1d1d1f] placeholder-[#86868b] focus:border-[#1d1d1f] focus:outline-none focus:ring-1 focus:ring-[#1d1d1f] transition-all"
                 />
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-[#1d1d1f] mb-1">
-                    Telefone / WhatsApp
-                  </label>
-                  <input
-                    type="text"
-                    name="phone"
-                    defaultValue={editingSupplier?.phone || ''}
-                    placeholder="(81) 99999-9999"
-                    className="w-full rounded-xl border border-[#d1d1d6] bg-white px-3.5 py-2 text-sm text-[#1d1d1f] placeholder-[#86868b] focus:border-[#1d1d1f] focus:outline-none focus:ring-1 focus:ring-[#1d1d1f] transition-all"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-[#1d1d1f] mb-1">
-                    CNPJ / CPF
-                  </label>
-                  <input
-                    type="text"
-                    name="document"
-                    defaultValue={editingSupplier?.document || ''}
-                    placeholder="00.000.000/0001-00"
-                    className="w-full rounded-xl border border-[#d1d1d6] bg-white px-3.5 py-2 text-sm text-[#1d1d1f] placeholder-[#86868b] focus:border-[#1d1d1f] focus:outline-none focus:ring-1 focus:ring-[#1d1d1f] transition-all"
-                  />
-                </div>
-              </div>
-
+              {/* 2. Telefone / WhatsApp */}
               <div>
-                <label className="block text-xs font-semibold text-[#1d1d1f] mb-1">
-                  E-mail de Contato
+                <label className="block text-xs font-bold text-[#1d1d1f] mb-1.5 flex items-center gap-1.5">
+                  <Phone size={13} className="text-[#1a7f37]" />
+                  Telefone / WhatsApp
                 </label>
                 <input
-                  type="email"
-                  name="email"
-                  defaultValue={editingSupplier?.email || ''}
-                  placeholder="financeiro@fornecedor.com.br"
-                  className="w-full rounded-xl border border-[#d1d1d6] bg-white px-3.5 py-2 text-sm text-[#1d1d1f] placeholder-[#86868b] focus:border-[#1d1d1f] focus:outline-none focus:ring-1 focus:ring-[#1d1d1f] transition-all"
+                  type="text"
+                  name="phone"
+                  defaultValue={editingSupplier?.phone || ''}
+                  placeholder="(81) 99999-9999"
+                  className="w-full rounded-xl border border-[#d1d1d6] bg-white px-3.5 py-2.5 text-sm text-[#1d1d1f] placeholder-[#86868b] focus:border-[#1d1d1f] focus:outline-none focus:ring-1 focus:ring-[#1d1d1f] transition-all"
                 />
               </div>
 
+              {/* 3. Chave PIX */}
               <div>
-                <label className="block text-xs font-semibold text-[#1d1d1f] mb-1">
-                  Chave PIX / Dados Bancários / Observações
+                <label className="block text-xs font-bold text-[#1d1d1f] mb-1.5 flex items-center justify-between">
+                  <span className="flex items-center gap-1.5">
+                    <QrCode size={13} className="text-[#0071e3]" />
+                    Chave PIX
+                  </span>
+                  <span className="text-[11px] font-normal text-[#86868b]">CPF, CNPJ, Celular, E-mail ou Aleatória</span>
                 </label>
-                <textarea
+                <input
+                  type="text"
+                  name="pix"
+                  defaultValue={
+                    editingSupplier?.document ||
+                    (editingSupplier?.notes?.startsWith('Chave PIX: ')
+                      ? editingSupplier.notes.replace('Chave PIX: ', '')
+                      : '')
+                  }
+                  placeholder="Ex: 81999999999 ou financeiro@email.com ou 00.000.000/0001-00"
+                  className="w-full rounded-xl border border-[#d1d1d6] bg-white px-3.5 py-2.5 text-sm font-medium text-[#1d1d1f] placeholder-[#86868b] focus:border-[#1d1d1f] focus:outline-none focus:ring-1 focus:ring-[#1d1d1f] transition-all"
+                />
+              </div>
+
+              {/* 4. Observações Opcionais */}
+              <div>
+                <label className="block text-xs font-medium text-[#86868b] mb-1.5">
+                  Observações adicionais (opcional)
+                </label>
+                <input
+                  type="text"
                   name="notes"
-                  rows={3}
-                  defaultValue={editingSupplier?.notes || ''}
-                  placeholder="Ex: Chave PIX CNPJ: 12.345.678/0001-90 (Banco Santander) / Falar com Carlos"
-                  className="w-full rounded-xl border border-[#d1d1d6] bg-white px-3.5 py-2 text-sm text-[#1d1d1f] placeholder-[#86868b] focus:border-[#1d1d1f] focus:outline-none focus:ring-1 focus:ring-[#1d1d1f] transition-all"
+                  defaultValue={
+                    editingSupplier?.notes?.startsWith('Chave PIX: ') ? '' : (editingSupplier?.notes || '')
+                  }
+                  placeholder="Ex: Banco Santander / Falar com Carlos"
+                  className="w-full rounded-xl border border-[#e5e5ea] bg-[#fbfbfd] px-3.5 py-2 text-xs text-[#1d1d1f] placeholder-[#86868b] focus:border-[#1d1d1f] focus:bg-white focus:outline-none transition-all"
                 />
               </div>
 
@@ -1283,9 +1435,9 @@ export function FornecedoresClient({
                 <button
                   type="submit"
                   disabled={isPending}
-                  className="rounded-xl bg-[#1d1d1f] hover:bg-[#333336] text-white px-5 py-2 text-xs font-semibold transition-all shadow-xs cursor-pointer disabled:opacity-50"
+                  className="rounded-xl bg-[#1d1d1f] hover:bg-black text-white px-5 py-2 text-xs font-semibold transition-all shadow-xs cursor-pointer disabled:opacity-50"
                 >
-                  {isPending ? 'Gravando...' : editingSupplier ? 'Salvar Alterações' : 'Cadastrar Fornecedor'}
+                  {isPending ? 'Salvando...' : editingSupplier ? 'Salvar Alterações' : 'Cadastrar Fornecedor'}
                 </button>
               </div>
             </form>
@@ -1338,7 +1490,7 @@ export function FornecedoresClient({
                   className="w-full rounded-xl border border-[#d1d1d6] bg-white px-3.5 py-2 text-sm text-[#1d1d1f] focus:border-[#1d1d1f] focus:outline-none focus:ring-1 focus:ring-[#1d1d1f] transition-all"
                 >
                   <option value="">Selecione o fornecedor...</option>
-                  {suppliers.map((s) => (
+                  {localSuppliers.map((s) => (
                     <option key={s.id} value={s.id}>
                       {s.name}
                     </option>
@@ -1457,102 +1609,7 @@ export function FornecedoresClient({
         </div>
       )}
 
-      {/* MODAL 3: MOVIMENTAR CAIXA DE FORNECEDORES */}
-      {caixinhaModalOpen && (
-        <div className="fixed inset-0 z-50 overflow-y-auto flex min-h-full items-center justify-center bg-black/40 backdrop-blur-xs p-3 sm:p-4 animate-in fade-in duration-150">
-          <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl border border-[#e5e5ea] animate-in zoom-in-95 duration-150">
-            <div className="flex items-center justify-between pb-4 border-b border-[#f2f2f7]">
-              <div className="flex items-center gap-2">
-                <div className="rounded-xl bg-[#fff8ee] p-2 text-[#d97706]">
-                  <Truck size={20} />
-                </div>
-                <div>
-                  <h3 className="text-lg font-bold text-[#1d1d1f]">
-                    {caixinhaActionType === 'deposit'
-                      ? 'Guardar no Caixa de Fornecedores'
-                      : 'Resgatar do Caixa de Fornecedores'}
-                  </h3>
-                  <p className="text-xs text-[#6e6e73]">
-                    Saldo Atual Reservado: R${' '}
-                    {caixinhaBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => setCaixinhaModalOpen(false)}
-                className="rounded-xl p-1.5 text-[#86868b] hover:bg-[#f5f5f7] hover:text-[#1d1d1f] transition-colors cursor-pointer"
-              >
-                <X size={18} />
-              </button>
-            </div>
 
-            {errorMessage && (
-              <div className="mt-4 rounded-xl border border-[#feeceb] bg-[#fff5f5] p-3 text-xs text-[#cf222e]">
-                {errorMessage}
-              </div>
-            )}
-
-            <form onSubmit={handleCaixinhaMovement} className="mt-4 space-y-4">
-              <div className="flex rounded-xl bg-[#f5f5f7] p-1 border border-[#e5e5ea]">
-                <button
-                  type="button"
-                  onClick={() => setCaixinhaActionType('deposit')}
-                  className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
-                    caixinhaActionType === 'deposit'
-                      ? 'bg-white text-[#d97706] shadow-2xs'
-                      : 'text-[#6e6e73]'
-                  }`}
-                >
-                  + Guardar / Reservar
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setCaixinhaActionType('withdraw')}
-                  className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
-                    caixinhaActionType === 'withdraw'
-                      ? 'bg-white text-[#1d1d1f] shadow-2xs'
-                      : 'text-[#6e6e73]'
-                  }`}
-                >
-                  - Resgatar para Conta
-                </button>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-[#1d1d1f] mb-1">
-                  Valor da Movimentação (R$) *
-                </label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0.01"
-                  name="amount"
-                  required
-                  placeholder="0,00"
-                  className="w-full rounded-xl border border-[#d1d1d6] bg-white px-3.5 py-2 text-sm text-[#1d1d1f] placeholder-[#86868b] focus:border-[#1d1d1f] focus:outline-none focus:ring-1 focus:ring-[#1d1d1f] transition-all"
-                />
-              </div>
-
-              <div className="flex justify-end gap-2.5 pt-4 border-t border-[#f2f2f7]">
-                <button
-                  type="button"
-                  onClick={() => setCaixinhaModalOpen(false)}
-                  className="px-4 py-2 text-xs font-semibold text-[#6e6e73] hover:text-[#1d1d1f] transition-colors cursor-pointer"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={isPending}
-                  className="rounded-xl bg-[#d97706] hover:bg-[#b45309] text-white px-5 py-2 text-xs font-semibold transition-all shadow-xs cursor-pointer disabled:opacity-50"
-                >
-                  {isPending ? 'Processando...' : 'Confirmar Movimentação'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

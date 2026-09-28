@@ -13,27 +13,28 @@ export async function createSupplier(formData: FormData) {
 
   const name = (formData.get('name') as string)?.trim()
   const phone = (formData.get('phone') as string)?.trim() || null
-  const email = (formData.get('email') as string)?.trim() || null
-  const document = (formData.get('document') as string)?.trim() || null
-  const address = (formData.get('address') as string)?.trim() || null
+  const pix = (formData.get('pix') as string)?.trim() || (formData.get('document') as string)?.trim() || null
   const notes = (formData.get('notes') as string)?.trim() || null
 
   if (!name) {
-    return { error: 'O nome ou razão social do fornecedor é obrigatório.' }
+    return { error: 'O nome do fornecedor é obrigatório.' }
   }
 
+  // Prepara dados de inserção
   const insertData: Record<string, any> = {
     name,
     type: 'supplier',
     phone,
-    email,
-    document,
-    address,
-    notes,
+    document: pix, // Guarda a chave PIX ou documento
+    notes: notes || (pix ? `Chave PIX: ${pix}` : null),
     created_by: userId || null,
   }
 
-  let { error } = await supabase.from('contacts').insert(insertData)
+  let { data, error } = await supabase
+    .from('contacts')
+    .insert(insertData)
+    .select('*')
+    .single()
 
   if (
     error &&
@@ -42,7 +43,8 @@ export async function createSupplier(formData: FormData) {
       error.code === 'PGRST204')
   ) {
     delete insertData.created_by
-    const retry = await supabase.from('contacts').insert(insertData)
+    const retry = await supabase.from('contacts').insert(insertData).select('*').single()
+    data = retry.data
     error = retry.error
   }
 
@@ -51,11 +53,11 @@ export async function createSupplier(formData: FormData) {
     return { error: error.message }
   }
 
-  invalidateCache(['fornecedores', 'financeiro', 'dashboard'])
+  invalidateCache(['fornecedores', 'fornecedores_data', 'financeiro', 'dashboard'])
   revalidatePath('/fornecedores')
   revalidatePath('/financeiro')
   revalidatePath('/')
-  return { success: true }
+  return { success: true, supplier: data }
 }
 
 export async function updateSupplier(formData: FormData) {
@@ -64,38 +66,36 @@ export async function updateSupplier(formData: FormData) {
   const id = formData.get('id') as string
   const name = (formData.get('name') as string)?.trim()
   const phone = (formData.get('phone') as string)?.trim() || null
-  const email = (formData.get('email') as string)?.trim() || null
-  const document = (formData.get('document') as string)?.trim() || null
-  const address = (formData.get('address') as string)?.trim() || null
+  const pix = (formData.get('pix') as string)?.trim() || (formData.get('document') as string)?.trim() || null
   const notes = (formData.get('notes') as string)?.trim() || null
 
   if (!id || !name) {
     return { error: 'Fornecedor inválido ou nome não informado.' }
   }
 
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('contacts')
     .update({
       name,
       phone,
-      email,
-      document,
-      address,
-      notes,
+      document: pix,
+      notes: notes || (pix ? `Chave PIX: ${pix}` : null),
       updated_at: new Date().toISOString(),
     })
     .eq('id', id)
+    .select('*')
+    .single()
 
   if (error) {
     console.error('Erro ao atualizar fornecedor:', error)
     return { error: error.message }
   }
 
-  invalidateCache(['fornecedores', 'financeiro', 'dashboard'])
+  invalidateCache(['fornecedores', 'fornecedores_data', 'financeiro', 'dashboard'])
   revalidatePath('/fornecedores')
   revalidatePath('/financeiro')
   revalidatePath('/')
-  return { success: true }
+  return { success: true, supplier: data }
 }
 
 export async function deleteSupplier(id: string) {

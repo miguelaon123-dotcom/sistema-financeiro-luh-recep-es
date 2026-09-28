@@ -712,11 +712,29 @@ export async function returnEventWithInspection(
     }
   }
 
-  // Concluir status do evento para 'completed'
+  // Concluir status do evento para 'completed' e dar baixa financeira
+  const todayInspection = new Date().toISOString().split('T')[0]
   await supabase
     .from('events')
-    .update({ status: 'completed' })
+    .update({ 
+      status: 'completed',
+      deposit_status: 'paid',
+      deposit_paid_date: todayInspection,
+    })
     .eq('id', eventId)
+
+  try {
+    await supabase
+      .from('financial_transactions')
+      .update({
+        status: 'paid',
+        paid_date: todayInspection,
+      })
+      .eq('event_id', eventId)
+      .eq('type', 'income')
+  } catch (txErr) {
+    console.warn('Aviso ao dar baixa nas transações no retorno de evento:', txErr)
+  }
 
   // Auditoria do checklist de devolução
   try {
@@ -989,17 +1007,18 @@ export async function receiveEventContractPayment(eventId: string) {
     return { error: txErr.message }
   }
 
-  // Tenta atualizar colunas opcionais na tabela events
+  // Atualiza status do evento para quitado/realizado ('completed') e sinal quitado
   try {
     await supabase
       .from('events')
       .update({
+        status: 'completed',
         deposit_status: 'paid',
         deposit_paid_date: today,
       })
       .eq('id', eventId)
   } catch (err) {
-    console.warn('Aviso ao atualizar deposit_status no evento:', err)
+    console.warn('Aviso ao atualizar status no evento:', err)
   }
 
   invalidateCache(['eventos', 'financeiro', 'dashboard'])

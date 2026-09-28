@@ -350,6 +350,10 @@ export function EventosClient({
     return localEvents.filter((e) => getIsEventSinalPaid(e)).length
   }, [localEvents])
 
+  const budgetCount = useMemo(() => localEvents.filter((e) => e.status === 'budget').length, [localEvents])
+  const approvedCount = useMemo(() => localEvents.filter((e) => e.status === 'approved').length, [localEvents])
+  const completedCount = useMemo(() => localEvents.filter((e) => e.status === 'completed').length, [localEvents])
+
   // Manipuladores de Filtros de Período e Data
   const handleMonthChange = (month: string) => {
     setSelectedMonth(month)
@@ -510,9 +514,25 @@ export function EventosClient({
     }
 
     setActionLoadingId(id)
+    const todayStrNow = new Date().toISOString().split('T')[0]
     // Atualização otimista imediata na interface
     setLocalEvents((prev) =>
-      prev.map((e) => (e.id === id ? { ...e, status: newStatus } : e))
+      prev.map((e) => {
+        if (e.id !== id) return e
+        if (newStatus === 'completed') {
+          const txs = (e.financial_transactions || []).map((t) =>
+            t.type === 'income' ? { ...t, status: 'paid' as const, paid_date: todayStrNow } : t
+          )
+          return {
+            ...e,
+            status: newStatus,
+            deposit_status: 'paid',
+            deposit_paid_date: todayStrNow,
+            financial_transactions: txs,
+          }
+        }
+        return { ...e, status: newStatus }
+      })
     )
     startTransition(async () => {
       const res = await updateEventStatus(id, newStatus)
@@ -536,17 +556,24 @@ export function EventosClient({
     })
   }
 
-  // Recebimento do Contrato do Evento no Financeiro
+  // Recebimento e Quitação do Contrato do Evento no Financeiro (Baixa total)
   const handleReceiveContract = (eventId: string) => {
     setActionLoadingId(eventId)
-    // Atualização otimista imediata
+    const todayStrNow = new Date().toISOString().split('T')[0]
+    // Atualização otimista imediata: dá baixa e move para 'completed' (Quitados)
     setLocalEvents((prev) =>
       prev.map((e) => {
         if (e.id !== eventId) return e
         const txs = (e.financial_transactions || []).map((t) =>
-          t.type === 'income' ? { ...t, status: 'paid' as const } : t
+          t.type === 'income' ? { ...t, status: 'paid' as const, paid_date: todayStrNow } : t
         )
-        return { ...e, deposit_status: 'paid', financial_transactions: txs }
+        return {
+          ...e,
+          status: 'completed',
+          deposit_status: 'paid',
+          deposit_paid_date: todayStrNow,
+          financial_transactions: txs,
+        }
       })
     )
 
@@ -949,21 +976,32 @@ Por favor, confirmem presença com antecedência! ✅`
             {/* Filtro por Status do Evento */}
             <div className="flex items-center gap-1.5 bg-[#f5f5f7] p-1 rounded-xl overflow-x-auto border border-[#e5e5ea]">
               {[
-                { label: 'Todos', val: 'all' },
-                { label: 'Orçamentos', val: 'budget' },
-                { label: 'Aprovados', val: 'approved' },
-                { label: 'Realizados', val: 'completed' },
+                { label: 'Todos', val: 'all', count: localEvents.length },
+                { label: 'Orçamentos', val: 'budget', count: budgetCount },
+                { label: 'Aprovados', val: 'approved', count: approvedCount },
+                { label: 'Quitados', val: 'completed', count: completedCount },
               ].map((tab) => (
                 <button
                   key={tab.val}
                   onClick={() => setFilterStatus(tab.val)}
-                  className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all whitespace-nowrap cursor-pointer ${
+                  className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all whitespace-nowrap cursor-pointer flex items-center gap-1.5 ${
                     filterStatus === tab.val
                       ? 'bg-white text-[#1d1d1f] shadow-xs'
                       : 'text-[#6e6e73] hover:text-[#1d1d1f]'
                   }`}
                 >
-                  {tab.label}
+                  <span>{tab.label}</span>
+                  <span
+                    className={`rounded-full px-1.5 py-0.2 text-[10px] font-bold ${
+                      filterStatus === tab.val
+                        ? tab.val === 'completed'
+                          ? 'bg-[#e8f8ee] text-[#1a7f37]'
+                          : 'bg-[#f5f5f7] text-[#1d1d1f]'
+                        : 'bg-[#e5e5ea] text-[#86868b]'
+                    }`}
+                  >
+                    {tab.count}
+                  </span>
                 </button>
               ))}
             </div>
@@ -1213,7 +1251,7 @@ Por favor, confirmem presença com antecedência! ✅`
                               : evt.status === 'approved'
                               ? 'bg-[#e8f8ee] text-[#1a7f37]'
                               : evt.status === 'completed'
-                              ? 'bg-[#f5f5f7] text-[#6e6e73]'
+                              ? 'bg-[#e8f8ee] text-[#1a7f37] border border-[#b4e8c7]'
                               : 'bg-[#feeceb] text-[#cf222e]'
                           }`}
                         >
@@ -1222,7 +1260,7 @@ Por favor, confirmem presença com antecedência! ✅`
                             : evt.status === 'approved'
                             ? 'Aprovado'
                             : evt.status === 'completed'
-                            ? 'Realizado'
+                            ? '✓ Quitado'
                             : 'Cancelado'}
                         </span>
                       </div>
@@ -1423,10 +1461,11 @@ Por favor, confirmem presença com antecedência! ✅`
                                               type="button"
                                               onClick={() => handleReceiveContract(evt.id)}
                                               disabled={actionLoadingId === evt.id}
-                                              className="text-[10px] font-semibold text-[#0071e3] hover:underline cursor-pointer bg-[#ebf4fe] px-2 py-0.5 rounded"
-                                              title="Receber saldo restante no Financeiro"
+                                              className="inline-flex items-center gap-1 text-[10px] font-bold text-white bg-[#1a7f37] hover:bg-[#15803d] cursor-pointer px-2 py-0.5 rounded transition-all shadow-xs"
+                                              title="Dar baixa e quitar saldo restante"
                                             >
-                                              Receber
+                                              <Check size={11} />
+                                              Dar Baixa / Quitar
                                             </button>
                                           )}
                                         </>
@@ -1466,10 +1505,11 @@ Por favor, confirmem presença com antecedência! ✅`
                                       type="button"
                                       onClick={() => handleReceiveContract(evt.id)}
                                       disabled={actionLoadingId === evt.id}
-                                      className="text-[10px] font-semibold text-[#0071e3] hover:underline cursor-pointer bg-[#ebf4fe] px-1.5 py-0.5 rounded"
-                                      title="Marcar contrato como recebido no Financeiro"
+                                      className="inline-flex items-center gap-1 text-[10px] font-bold text-white bg-[#1a7f37] hover:bg-[#15803d] cursor-pointer px-2 py-0.5 rounded transition-all shadow-xs"
+                                      title="Dar baixa total no contrato e mover evento para Quitados"
                                     >
-                                      Receber
+                                      <Check size={11} />
+                                      Dar Baixa / Quitar
                                     </button>
                                   )}
                                 </div>
@@ -1530,26 +1570,38 @@ Por favor, confirmem presença com antecedência! ✅`
                       )}
 
                       {evt.status === 'approved' && (
-                        <button
-                          onClick={() => {
-                            if (materials.totalActive > 0) {
-                              openInspectionModal(evt)
-                            } else {
-                              handleStatusChange(evt.id, 'completed')
-                            }
-                          }}
-                          disabled={actionLoadingId === evt.id}
-                          className="text-[11px] font-semibold text-white bg-[#0071e3] hover:bg-[#005bb5] px-2.5 py-1.5 rounded-lg transition-colors flex items-center gap-1 cursor-pointer shadow-xs"
-                        >
-                          {materials.totalActive > 0 ? (
-                            <>
-                              <ShieldAlert size={12} />
-                              Conferir & Concluir
-                            </>
-                          ) : (
-                            'Concluir Evento'
-                          )}
-                        </button>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => handleReceiveContract(evt.id)}
+                            disabled={actionLoadingId === evt.id}
+                            className="text-[11px] font-bold text-white bg-[#1a7f37] hover:bg-[#15803d] px-2.5 py-1.5 rounded-lg transition-all flex items-center gap-1 cursor-pointer shadow-xs"
+                            title="Dar baixa no contrato e mover evento para Quitados"
+                          >
+                            <Check size={12} />
+                            Quitar Evento
+                          </button>
+                          <button
+                            onClick={() => {
+                              if (materials.totalActive > 0) {
+                                openInspectionModal(evt)
+                              } else {
+                                handleStatusChange(evt.id, 'completed')
+                              }
+                            }}
+                            disabled={actionLoadingId === evt.id}
+                            className="text-[11px] font-semibold text-[#1d1d1f] bg-[#f5f5f7] hover:bg-[#e5e5ea] px-2.5 py-1.5 rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
+                          >
+                            {materials.totalActive > 0 ? (
+                              <>
+                                <ShieldAlert size={12} />
+                                Conferir Devolução
+                              </>
+                            ) : (
+                              'Concluir'
+                            )}
+                          </button>
+                        </div>
                       )}
 
                       {evt.status === 'completed' && materials.totalActive > 0 && (
@@ -2351,7 +2403,7 @@ Por favor, confirmem presença com antecedência! ✅`
                   >
                     <option value="budget">Orçamento em Aberto</option>
                     <option value="approved">Contrato Fechado & Aprovado</option>
-                    <option value="completed">Evento Já Realizado</option>
+                    <option value="completed">Quitado / Concluído (Baixa no Financeiro)</option>
                     <option value="canceled">Cancelado</option>
                   </select>
                 </div>

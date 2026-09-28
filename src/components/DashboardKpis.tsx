@@ -49,18 +49,11 @@ export function DashboardKpis({
   const now = new Date()
   const currentYearStr = String(now.getFullYear())
   const currentMonthStr = String(now.getMonth() + 1).padStart(2, '0')
-  const nextMonthDate = new Date(now.getFullYear(), now.getMonth() + 1, 1)
-  const nextMonthYearStr = String(nextMonthDate.getFullYear())
-  const nextMonthStr = String(nextMonthDate.getMonth() + 1).padStart(2, '0')
 
   const [selectedMonth, setSelectedMonth] = useState<string>(currentMonthStr)
   const [selectedYear, setSelectedYear] = useState<string>(currentYearStr)
-  const [dateFilterMode, setDateFilterMode] = useState<'event' | 'due'>('event')
+  const [dateFilterMode, setDateFilterMode] = useState<'due' | 'event'>('due')
 
-  const isCurrentMonthSelected =
-    selectedMonth === currentMonthStr && selectedYear === currentYearStr
-  const isNextMonthSelected =
-    selectedMonth === nextMonthStr && selectedYear === nextMonthYearStr
   const isPeriodFiltered = selectedMonth !== 'all' || selectedYear !== 'all'
 
   // Resolução inteligente da data de competência da transação
@@ -206,66 +199,6 @@ export function DashboardKpis({
               ))}
             </select>
 
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedMonth(currentMonthStr)
-                setSelectedYear(currentYearStr)
-              }}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-xl border transition-all cursor-pointer ${
-                isCurrentMonthSelected
-                  ? 'bg-[#1d1d1f] text-white border-[#1d1d1f] shadow-xs'
-                  : 'bg-white text-[#6e6e73] border-[#d1d1d6] hover:text-[#1d1d1f] hover:bg-[#f5f5f7]'
-              }`}
-            >
-              Este Mês
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedMonth(nextMonthStr)
-                setSelectedYear(nextMonthYearStr)
-              }}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-xl border transition-all cursor-pointer ${
-                isNextMonthSelected
-                  ? 'bg-[#1d1d1f] text-white border-[#1d1d1f] shadow-xs'
-                  : 'bg-white text-[#6e6e73] border-[#d1d1d6] hover:text-[#1d1d1f] hover:bg-[#f5f5f7]'
-              }`}
-            >
-              Próximo Mês
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedMonth('11')
-                setSelectedYear('2026')
-              }}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-xl border transition-all cursor-pointer ${
-                selectedMonth === '11' && selectedYear === '2026'
-                  ? 'bg-[#b8860b] text-white border-[#b8860b] shadow-xs'
-                  : 'bg-[#fffdf5] text-[#b8860b] border-[#f0e6cc] hover:bg-[#fff9e6]'
-              }`}
-            >
-              Novembro/26
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedMonth('12')
-                setSelectedYear('2026')
-              }}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-xl border transition-all cursor-pointer ${
-                selectedMonth === '12' && selectedYear === '2026'
-                  ? 'bg-[#1a7f37] text-white border-[#1a7f37] shadow-xs'
-                  : 'bg-[#f0fdf4] text-[#1a7f37] border-[#b4e8c7] hover:bg-[#dcfce7]'
-              }`}
-            >
-              Dezembro/26
-            </button>
-
             {isPeriodFiltered && (
               <button
                 type="button"
@@ -275,26 +208,14 @@ export function DashboardKpis({
                 }}
                 className="px-2.5 py-1.5 text-xs font-semibold text-[#cf222e] hover:bg-[#feeceb] rounded-xl transition-all cursor-pointer border border-transparent hover:border-[#fcd7d5]"
               >
-                Ver Geral
+                Limpar Filtro
               </button>
             )}
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            {/* Seletor de Modo: Por Mês da Festa (Evento) vs Data de Vencimento */}
+            {/* Seletor de Modo: Por Data de Vencimento/Quitação (Caixa) vs Mês da Festa (Evento) */}
             <div className="flex items-center gap-1 bg-[#f5f5f7] p-1 rounded-xl">
-              <button
-                type="button"
-                onClick={() => setDateFilterMode('event')}
-                className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
-                  dateFilterMode === 'event'
-                    ? 'bg-white text-[#1d1d1f] shadow-xs'
-                    : 'text-[#6e6e73] hover:text-[#1d1d1f]'
-                }`}
-                title="Agrupa pelo mês da festa/evento (Recomendado para contratos de buffet)"
-              >
-                🎉 Mês do Evento (Festas)
-              </button>
               <button
                 type="button"
                 onClick={() => setDateFilterMode('due')}
@@ -303,9 +224,21 @@ export function DashboardKpis({
                     ? 'bg-white text-[#1d1d1f] shadow-xs'
                     : 'text-[#6e6e73] hover:text-[#1d1d1f]'
                 }`}
-                title="Agrupa pela data de vencimento / quitação da parcela"
+                title="Agrupa pela data de vencimento / quitação da parcela (Fluxo de Caixa Real)"
               >
-                📅 Vencimento / Quitação
+                📅 Vencimento / Quitação (Caixa)
+              </button>
+              <button
+                type="button"
+                onClick={() => setDateFilterMode('event')}
+                className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+                  dateFilterMode === 'event'
+                    ? 'bg-white text-[#1d1d1f] shadow-xs'
+                    : 'text-[#6e6e73] hover:text-[#1d1d1f]'
+                }`}
+                title="Agrupa pelo mês da festa/evento contratado"
+              >
+                🎉 Mês do Evento (Festas)
               </button>
             </div>
 
@@ -321,6 +254,21 @@ export function DashboardKpis({
             </span>
           </div>
         </div>
+
+        {dateFilterMode === 'event' && isPeriodFiltered && periodTransactions.length === 0 && (
+          <div className="mt-2 rounded-xl border border-[#ffe0b2] bg-[#fff8e1] p-3 text-xs text-[#b8860b] flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <span>
+              Nenhum evento agendado para <strong>{periodLabel}</strong> no modo de Festas.
+            </span>
+            <button
+              type="button"
+              onClick={() => setDateFilterMode('due')}
+              className="text-xs font-bold text-[#0071e3] underline hover:text-[#005bb5] cursor-pointer"
+            >
+              Alternar para Vencimento / Quitação (Caixa) →
+            </button>
+          </div>
+        )}
       </div>
 
       {/* KPI Cards Dinâmicos */}
@@ -369,14 +317,22 @@ export function DashboardKpis({
             <span
               className={`rounded-md px-1.5 py-0.5 text-[10px] font-bold ${
                 isPeriodFiltered
-                  ? periodProfit >= 0
-                    ? 'bg-[#e8f8ee] text-[#1a7f37]'
-                    : 'bg-[#feeceb] text-[#cf222e]'
+                  ? periodReceived > 0
+                    ? periodProfit >= 0
+                      ? 'bg-[#e8f8ee] text-[#1a7f37]'
+                      : 'bg-[#feeceb] text-[#cf222e]'
+                    : periodPaid > 0
+                    ? 'bg-[#feeceb] text-[#cf222e]'
+                    : 'bg-[#f5f5f7] text-[#6e6e73]'
                   : 'bg-[#e8f8ee] text-[#1a7f37]'
               }`}
             >
               {isPeriodFiltered
-                ? `${periodProfit >= 0 ? '+' : ''}${periodProfitMargin.toFixed(1)}% lucro`
+                ? periodReceived > 0
+                  ? `${periodProfit >= 0 ? '+' : ''}${periodProfitMargin.toFixed(1)}% margem`
+                  : periodPaid > 0
+                  ? 'Despesas do mês'
+                  : 'Sem movimentação'
                 : 'Disponível'}
             </span>
           </div>
@@ -394,7 +350,7 @@ export function DashboardKpis({
           </p>
           <div className="mt-2 flex items-center justify-between text-xs text-[#86868b]">
             <span>
-              {isPeriodFiltered ? 'Lucro líquido do período' : 'Livre de caixinhas'}
+              {isPeriodFiltered ? 'Resultado líquido do mês' : 'Livre de caixinhas'}
             </span>
             <span className="text-[#1a7f37] font-medium group-hover:underline flex items-center gap-0.5">
               Ver mais <ArrowRight size={11} />
@@ -404,14 +360,22 @@ export function DashboardKpis({
           {isPeriodFiltered && (
             <div className="mt-3 pt-2.5 border-t border-[#f2f2f7] flex flex-col gap-1 text-[11px] text-[#6e6e73]">
               <div className="flex items-center justify-between">
-                <span>Margem Atual:</span>
+                <span>Margem Realizada:</span>
                 <strong className={periodProfit >= 0 ? 'text-[#1a7f37]' : 'text-[#cf222e]'}>
-                  {periodProfitMargin.toFixed(1)}%
+                  {periodReceived > 0
+                    ? `${periodProfitMargin.toFixed(1)}%`
+                    : periodPaid > 0
+                    ? '—'
+                    : '0.0%'}
                 </strong>
               </div>
               <div className="flex items-center justify-between text-[#b8860b]">
                 <span>Ao fechar contas:</span>
-                <strong>{periodProjectedProfitMargin.toFixed(1)}%</strong>
+                <strong>
+                  {periodProjectedIncome > 0
+                    ? `${periodProjectedProfitMargin.toFixed(1)}%`
+                    : '—'}
+                </strong>
               </div>
             </div>
           )}

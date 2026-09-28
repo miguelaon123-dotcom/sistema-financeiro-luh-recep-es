@@ -361,7 +361,12 @@ export function CaixinhasFinanceiras({
       {/* Grid de Caixinhas */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {caixinhas.map((caixinha) => {
-          const effectiveColor = caixinha.color === '#820ad1' ? '#1d1d1f' : (caixinha.color || '#1d1d1f')
+          const isFornecedor =
+            caixinha.category === 'fornecedores' ||
+            caixinha.name.toLowerCase().includes('fornecedor')
+          const effectiveColor = isFornecedor
+            ? '#d97706'
+            : (caixinha.color === '#820ad1' ? '#1d1d1f' : (caixinha.color || '#1d1d1f'))
           const percent =
             caixinha.target_balance > 0
               ? Math.min(Math.round((caixinha.current_balance / caixinha.target_balance) * 100), 100)
@@ -370,8 +375,15 @@ export function CaixinhasFinanceiras({
           return (
             <div
               key={caixinha.id}
-              className="relative flex flex-col justify-between rounded-3xl border border-[#e5e5ea] bg-white p-5 shadow-2xs hover:shadow-md hover:border-[#1d1d1f]/40 transition-all duration-200 group"
+              className={`relative flex flex-col justify-between rounded-3xl border p-5 shadow-2xs hover:shadow-md transition-all duration-200 group overflow-hidden ${
+                isFornecedor
+                  ? 'border-[#fed7aa] bg-gradient-to-b from-[#fffdfa] to-[#fff7ed] hover:border-[#f59e0b]'
+                  : 'border-[#e5e5ea] bg-white hover:border-[#1d1d1f]/40'
+              }`}
             >
+              {isFornecedor && (
+                <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-[#f59e0b] via-[#ea580c] to-[#d97706]" />
+              )}
               <div>
                 {/* Topo da Caixinha */}
                 <div className="flex items-start justify-between">
