@@ -1007,18 +1007,16 @@ export async function receiveEventContractPayment(eventId: string) {
     return { error: txErr.message }
   }
 
-  // Atualiza status do evento para quitado/realizado ('completed') e sinal quitado
-  try {
-    await supabase
-      .from('events')
-      .update({
-        status: 'completed',
-        deposit_status: 'paid',
-        deposit_paid_date: today,
-      })
-      .eq('id', eventId)
-  } catch (err) {
-    console.warn('Aviso ao atualizar status no evento:', err)
+  // Atualiza status do evento para quitado/realizado ('completed')
+  const { error: statusErr } = await supabase
+    .from('events')
+    .update({
+      status: 'completed',
+    })
+    .eq('id', eventId)
+
+  if (statusErr) {
+    console.error('Erro ao atualizar status do evento para completed:', statusErr)
   }
 
   invalidateCache(['eventos', 'financeiro', 'dashboard'])

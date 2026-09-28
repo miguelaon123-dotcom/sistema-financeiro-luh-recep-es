@@ -350,9 +350,15 @@ export function EventosClient({
     return localEvents.filter((e) => getIsEventSinalPaid(e)).length
   }, [localEvents])
 
+  const isEventFullyPaid = (e: EventItem) => {
+    if (e.status === 'completed') return true
+    const incTxs = (e.financial_transactions || []).filter((t) => t.type === 'income')
+    return incTxs.length > 0 && incTxs.every((t) => t.status === 'paid')
+  }
+
   const budgetCount = useMemo(() => localEvents.filter((e) => e.status === 'budget').length, [localEvents])
-  const approvedCount = useMemo(() => localEvents.filter((e) => e.status === 'approved').length, [localEvents])
-  const completedCount = useMemo(() => localEvents.filter((e) => e.status === 'completed').length, [localEvents])
+  const approvedCount = useMemo(() => localEvents.filter((e) => e.status === 'approved' && !isEventFullyPaid(e)).length, [localEvents])
+  const completedCount = useMemo(() => localEvents.filter((e) => isEventFullyPaid(e)).length, [localEvents])
 
   // Manipuladores de Filtros de Período e Data
   const handleMonthChange = (month: string) => {
@@ -460,7 +466,15 @@ export function EventosClient({
       (evt.contacts?.name && evt.contacts.name.toLowerCase().includes(searchTerm.toLowerCase())) ||
       (evt.location && evt.location.toLowerCase().includes(searchTerm.toLowerCase()))
 
-    const matchesStatus = filterStatus === 'all' || evt.status === filterStatus
+    const isCompleted = isEventFullyPaid(evt)
+    const matchesStatus =
+      filterStatus === 'all'
+        ? true
+        : filterStatus === 'completed'
+        ? isCompleted
+        : filterStatus === 'approved'
+        ? evt.status === 'approved' && !isCompleted
+        : evt.status === filterStatus
 
     // Filtro por Status do Sinal (Pago vs Não Pagou)
     const isSinalPaid = getIsEventSinalPaid(evt)
