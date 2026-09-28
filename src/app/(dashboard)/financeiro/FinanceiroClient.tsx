@@ -84,7 +84,7 @@ export function FinanceiroClient({
   const [filterStatus, setFilterStatus] = useState<string>('all')
   const [selectedMonth, setSelectedMonth] = useState<string>('all')
   const [selectedYear, setSelectedYear] = useState<string>('all')
-  const [dateFilterMode, setDateFilterMode] = useState<'due' | 'event'>('due')
+  const [dateFilterMode, setDateFilterMode] = useState<'due' | 'event'>('event')
   const [modalType, setModalType] = useState<'income' | 'expense' | null>(
     initialAction === 'nova-receita'
       ? 'income'
@@ -122,11 +122,20 @@ export function FinanceiroClient({
 
   // Resolução inteligente da data de competência da transação
   const getTransactionDate = (tx: Transaction) => {
-    // Modo Evento (Competência da Festa): se a transação estiver ligada a um evento, usa a data da festa
-    if (dateFilterMode === 'event' && tx.events?.event_date) {
+    // Se a transação estiver ligada a um evento:
+    // Tanto no modo Evento quanto no modo Vencimento, os recebimentos e quitações do evento
+    // pertencem ao mês da festa (ou à data do evento), para que as parcelas que já quitaram
+    // apareçam juntas das parcelas a receber no mesmo fechamento mensal!
+    if (tx.events?.event_date) {
+      if (dateFilterMode === 'due' && tx.due_date && tx.status === 'pending') {
+        return tx.due_date
+      }
       return tx.events.event_date
     }
-    // Modo Vencimento/Caixa: se pago usa paid_date, se pendente usa due_date
+    // Para despesas avulsas e custos operacionais:
+    if (dateFilterMode === 'due') {
+      return tx.due_date || tx.paid_date || ''
+    }
     return (tx.status === 'paid' && tx.paid_date ? tx.paid_date : tx.due_date) || tx.due_date || ''
   }
 
@@ -441,18 +450,6 @@ export function FinanceiroClient({
             <div className="flex items-center gap-1 bg-[#f5f5f7] p-1 rounded-xl">
               <button
                 type="button"
-                onClick={() => setDateFilterMode('due')}
-                className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
-                  dateFilterMode === 'due'
-                    ? 'bg-white text-[#1d1d1f] shadow-xs'
-                    : 'text-[#6e6e73] hover:text-[#1d1d1f]'
-                }`}
-                title="Agrupa pela data de vencimento / quitação da parcela (Fluxo de Caixa Real)"
-              >
-                📅 Vencimento / Quitação (Caixa)
-              </button>
-              <button
-                type="button"
                 onClick={() => setDateFilterMode('event')}
                 className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
                   dateFilterMode === 'event'
@@ -462,6 +459,18 @@ export function FinanceiroClient({
                 title="Agrupa pelo mês da festa/evento (Recomendado para contratos de buffet)"
               >
                 🎉 Mês do Evento (Festas)
+              </button>
+              <button
+                type="button"
+                onClick={() => setDateFilterMode('due')}
+                className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+                  dateFilterMode === 'due'
+                    ? 'bg-white text-[#1d1d1f] shadow-xs'
+                    : 'text-[#6e6e73] hover:text-[#1d1d1f]'
+                }`}
+                title="Agrupa pela data de vencimento / quitação da parcela"
+              >
+                📅 Vencimento / Quitação (Caixa)
               </button>
             </div>
 
