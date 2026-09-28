@@ -106,6 +106,7 @@ export function FornecedoresClient({
   const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null)
   const [billModalOpen, setBillModalOpen] = useState(initialAction === 'nova-conta')
   const [selectedSupplierForBill, setSelectedSupplierForBill] = useState<string>('')
+  const [billInitialStatus, setBillInitialStatus] = useState<'pending' | 'paid'>('pending')
 
   const [isPending, startTransition] = useTransition()
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null)
@@ -633,31 +634,33 @@ export function FornecedoresClient({
               </select>
 
               {/* Filtro por Status */}
-              <div className="flex rounded-xl bg-[#f5f5f7] p-0.5 border border-[#e5e5ea]">
+              <div className="flex rounded-xl bg-[#f5f5f7] p-1 border border-[#e5e5ea]">
                 <button
                   onClick={() => setStatusFilter('all')}
-                  className={`px-3 py-1 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
-                    statusFilter === 'all' ? 'bg-white text-[#1d1d1f] shadow-2xs' : 'text-[#6e6e73]'
+                  className={`px-3 py-1 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                    statusFilter === 'all'
+                      ? 'bg-[#1d1d1f] text-white shadow-xs'
+                      : 'text-[#6e6e73] hover:text-[#1d1d1f]'
                   }`}
                 >
                   Todas
                 </button>
                 <button
                   onClick={() => setStatusFilter('pending')}
-                  className={`px-3 py-1 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+                  className={`px-3 py-1 text-xs font-bold rounded-lg transition-all cursor-pointer ${
                     statusFilter === 'pending'
-                      ? 'bg-white text-[#cf222e] shadow-2xs'
-                      : 'text-[#6e6e73]'
+                      ? 'bg-[#cf222e] text-white shadow-xs'
+                      : 'text-[#6e6e73] hover:text-[#1d1d1f]'
                   }`}
                 >
                   Pendentes
                 </button>
                 <button
                   onClick={() => setStatusFilter('paid')}
-                  className={`px-3 py-1 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+                  className={`px-3 py-1 text-xs font-bold rounded-lg transition-all cursor-pointer ${
                     statusFilter === 'paid'
-                      ? 'bg-white text-[#1a7f37] shadow-2xs'
-                      : 'text-[#6e6e73]'
+                      ? 'bg-[#16a34a] text-white shadow-xs'
+                      : 'text-[#6e6e73] hover:text-[#1d1d1f]'
                   }`}
                 >
                   Pagas
@@ -1559,29 +1562,95 @@ export function FornecedoresClient({
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-[#1d1d1f] mb-1">
-                  Status Inicial
+                <label className="block text-xs font-bold text-[#1d1d1f] mb-1.5 flex items-center justify-between">
+                  <span>Status Inicial da Conta *</span>
+                  <span className="text-[11px] font-semibold text-[#86868b]">
+                    Selecionado:{' '}
+                    <strong
+                      className={
+                        billInitialStatus === 'pending'
+                          ? 'text-[#cf222e]'
+                          : 'text-[#16a34a]'
+                      }
+                    >
+                      {billInitialStatus === 'pending'
+                        ? '● A Pagar (Pendente)'
+                        : '✓ Já Liquidado (Pago)'}
+                    </strong>
+                  </span>
                 </label>
-                <div className="grid grid-cols-2 gap-2">
-                  <label className="flex items-center justify-center gap-2 p-2 rounded-xl border border-[#e5e5ea] text-xs font-medium cursor-pointer has-checked:border-[#1d1d1f] has-checked:bg-[#f5f5f7]">
-                    <input
-                      type="radio"
-                      name="status"
-                      value="pending"
-                      defaultChecked
-                      className="accent-[#1d1d1f]"
-                    />
-                    <span>A Pagar (Pendente)</span>
-                  </label>
-                  <label className="flex items-center justify-center gap-2 p-2 rounded-xl border border-[#e5e5ea] text-xs font-medium cursor-pointer has-checked:border-[#1d1d1f] has-checked:bg-[#f5f5f7]">
-                    <input
-                      type="radio"
-                      name="status"
-                      value="paid"
-                      className="accent-[#1d1d1f]"
-                    />
-                    <span>Já Liquidado (Pago)</span>
-                  </label>
+
+                {/* Input oculto para submissão imediata no formulário */}
+                <input type="hidden" name="status" value={billInitialStatus} />
+
+                <div className="grid grid-cols-2 gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setBillInitialStatus('pending')}
+                    className={`flex items-center justify-center gap-2.5 p-3 rounded-2xl border-2 text-xs font-bold transition-all cursor-pointer ${
+                      billInitialStatus === 'pending'
+                        ? 'border-[#1d1d1f] bg-[#1d1d1f] text-white shadow-md ring-2 ring-[#1d1d1f]/20'
+                        : 'border-[#e5e5ea] bg-[#f5f5f7] text-[#6e6e73] hover:border-[#86868b] hover:text-[#1d1d1f]'
+                    }`}
+                  >
+                    <div
+                      className={`w-4 h-4 rounded-full flex items-center justify-center shrink-0 ${
+                        billInitialStatus === 'pending'
+                          ? 'bg-[#cf222e] text-white'
+                          : 'border-2 border-[#86868b]'
+                      }`}
+                    >
+                      {billInitialStatus === 'pending' && (
+                        <CheckCircle2 size={12} strokeWidth={3} />
+                      )}
+                    </div>
+                    <div className="text-left">
+                      <span className="block font-bold">A Pagar</span>
+                      <span
+                        className={`text-[10px] block font-normal ${
+                          billInitialStatus === 'pending'
+                            ? 'text-white/80'
+                            : 'text-[#86868b]'
+                        }`}
+                      >
+                        Pendente no caixa
+                      </span>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setBillInitialStatus('paid')}
+                    className={`flex items-center justify-center gap-2.5 p-3 rounded-2xl border-2 text-xs font-bold transition-all cursor-pointer ${
+                      billInitialStatus === 'paid'
+                        ? 'border-[#16a34a] bg-[#16a34a] text-white shadow-md ring-2 ring-[#16a34a]/20'
+                        : 'border-[#e5e5ea] bg-[#f5f5f7] text-[#6e6e73] hover:border-[#86868b] hover:text-[#1d1d1f]'
+                    }`}
+                  >
+                    <div
+                      className={`w-4 h-4 rounded-full flex items-center justify-center shrink-0 ${
+                        billInitialStatus === 'paid'
+                          ? 'bg-white text-[#16a34a]'
+                          : 'border-2 border-[#86868b]'
+                      }`}
+                    >
+                      {billInitialStatus === 'paid' && (
+                        <CheckCircle2 size={12} strokeWidth={3} />
+                      )}
+                    </div>
+                    <div className="text-left">
+                      <span className="block font-bold">Já Liquidado</span>
+                      <span
+                        className={`text-[10px] block font-normal ${
+                          billInitialStatus === 'paid'
+                            ? 'text-white/90'
+                            : 'text-[#86868b]'
+                        }`}
+                      >
+                        Pago / Baixado
+                      </span>
+                    </div>
+                  </button>
                 </div>
               </div>
 
