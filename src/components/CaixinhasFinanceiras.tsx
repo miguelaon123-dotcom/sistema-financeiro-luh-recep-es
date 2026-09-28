@@ -365,7 +365,7 @@ export function CaixinhasFinanceiras({
             caixinha.category === 'fornecedores' ||
             caixinha.name.toLowerCase().includes('fornecedor')
           const effectiveColor = isFornecedor
-            ? '#d97706'
+            ? '#1d1d1f'
             : (caixinha.color === '#820ad1' ? '#1d1d1f' : (caixinha.color || '#1d1d1f'))
           const percent =
             caixinha.target_balance > 0
@@ -377,19 +377,19 @@ export function CaixinhasFinanceiras({
               key={caixinha.id}
               className={`relative flex flex-col justify-between rounded-3xl border p-5 shadow-2xs hover:shadow-md transition-all duration-200 group overflow-hidden ${
                 isFornecedor
-                  ? 'border-2 border-[#f59e0b] bg-[#fef3c7] hover:border-[#d97706]'
+                  ? 'border-2 border-[#1d1d1f] bg-[#1d1d1f] text-white shadow-md'
                   : 'border-[#e5e5ea] bg-white hover:border-[#1d1d1f]/40'
               }`}
             >
               {isFornecedor && (
-                <div className="absolute top-0 left-0 right-0 h-1.5 bg-[#d97706]" />
+                <div className="absolute top-0 left-0 right-0 h-1 bg-white/20" />
               )}
               <div>
                 {/* Topo da Caixinha */}
                 <div className="flex items-start justify-between">
                   <div
                     className="flex h-10 w-10 items-center justify-center rounded-2xl text-white shadow-xs"
-                    style={{ backgroundColor: effectiveColor }}
+                    style={{ backgroundColor: isFornecedor ? '#2c2c2e' : effectiveColor }}
                   >
                     {getIcon(caixinha.icon)}
                   </div>
@@ -402,7 +402,11 @@ export function CaixinhasFinanceiras({
                         setAdjustBalanceCaixinha(caixinha)
                         setActionAmount(String(caixinha.current_balance))
                       }}
-                      className="rounded-lg p-1 text-[#86868b] hover:bg-[#f5f5f7] hover:text-[#1d1d1f] transition-colors cursor-pointer"
+                      className={`rounded-lg p-1 transition-colors cursor-pointer ${
+                        isFornecedor
+                          ? 'text-white/70 hover:bg-white/10 hover:text-white'
+                          : 'text-[#86868b] hover:bg-[#f5f5f7] hover:text-[#1d1d1f]'
+                      }`}
                       title="Editar Saldo diretamente"
                     >
                       <SlidersHorizontal size={14} />
@@ -412,7 +416,11 @@ export function CaixinhasFinanceiras({
                         setErrorMessage(null)
                         setEditModalCaixinha(caixinha)
                       }}
-                      className="rounded-lg p-1 text-[#86868b] hover:bg-[#f5f5f7] hover:text-[#1d1d1f] transition-colors cursor-pointer"
+                      className={`rounded-lg p-1 transition-colors cursor-pointer ${
+                        isFornecedor
+                          ? 'text-white/70 hover:bg-white/10 hover:text-white'
+                          : 'text-[#86868b] hover:bg-[#f5f5f7] hover:text-[#1d1d1f]'
+                      }`}
                       title="Editar detalhes da caixinha"
                     >
                       <Pencil size={14} />
@@ -422,7 +430,11 @@ export function CaixinhasFinanceiras({
                         setErrorMessage(null)
                         setDeleteConfirmCaixinha(caixinha)
                       }}
-                      className="rounded-lg p-1 text-[#86868b] hover:bg-[#feeceb] hover:text-[#cf222e] transition-colors cursor-pointer"
+                      className={`rounded-lg p-1 transition-colors cursor-pointer ${
+                        isFornecedor
+                          ? 'text-white/70 hover:bg-white/10 hover:text-rose-400'
+                          : 'text-[#86868b] hover:bg-[#feeceb] hover:text-[#cf222e]'
+                      }`}
                       title="Apagar caixinha"
                     >
                       <Trash2 size={14} />
@@ -432,18 +444,25 @@ export function CaixinhasFinanceiras({
 
                 {/* Nome e Saldo */}
                 <div className="mt-3.5">
-                  <h4 className="text-sm font-bold text-[#1d1d1f] truncate" title={caixinha.name}>
+                  <h4
+                    className={`text-sm font-bold truncate ${isFornecedor ? 'text-white' : 'text-[#1d1d1f]'}`}
+                    title={caixinha.name}
+                  >
                     {caixinha.name}
                   </h4>
-                  <p className="text-xs text-[#6e6e73] mt-0.5 line-clamp-1">
+                  <p className={`text-xs mt-0.5 line-clamp-1 ${isFornecedor ? 'text-white/70' : 'text-[#6e6e73]'}`}>
                     {caixinha.notes || 'Sem observações'}
                   </p>
 
                   <div className="mt-2.5">
-                    <span className="text-[11px] font-semibold text-[#86868b] uppercase tracking-wider block">
+                    <span className={`text-[11px] font-semibold uppercase tracking-wider block ${
+                      isFornecedor ? 'text-white/60' : 'text-[#86868b]'
+                    }`}>
                       Saldo Guardado
                     </span>
-                    <p className="text-xl sm:text-2xl font-bold tracking-tight text-[#1d1d1f]">
+                    <p className={`text-xl sm:text-2xl font-bold tracking-tight ${
+                      isFornecedor ? 'text-white' : 'text-[#1d1d1f]'
+                    }`}>
                       R${' '}
                       {Number(caixinha.current_balance).toLocaleString('pt-BR', {
                         minimumFractionDigits: 2,
@@ -456,25 +475,25 @@ export function CaixinhasFinanceiras({
                 {caixinha.target_balance > 0 && (
                   <div className="mt-3.5">
                     <div className="flex items-center justify-between text-[11px] font-medium mb-1">
-                      <span className="text-[#6e6e73]">
+                      <span className={isFornecedor ? 'text-white/70' : 'text-[#6e6e73]'}>
                         Meta: R${' '}
                         {Number(caixinha.target_balance).toLocaleString('pt-BR', {
                           minimumFractionDigits: 0,
                         })}
                       </span>
                       <span
-                        className="font-bold"
-                        style={{ color: effectiveColor }}
+                        className={`font-bold ${isFornecedor ? 'text-white' : ''}`}
+                        style={{ color: isFornecedor ? undefined : effectiveColor }}
                       >
                         {percent}%
                       </span>
                     </div>
-                    <div className="h-2 w-full overflow-hidden rounded-full bg-[#f2f2f7]">
+                    <div className={`h-2 w-full overflow-hidden rounded-full ${isFornecedor ? 'bg-white/20' : 'bg-[#f2f2f7]'}`}>
                       <div
                         className="h-full rounded-full transition-all duration-500"
                         style={{
                           width: `${percent}%`,
-                          backgroundColor: effectiveColor,
+                          backgroundColor: isFornecedor ? '#ffffff' : effectiveColor,
                         }}
                       />
                     </div>
@@ -484,7 +503,7 @@ export function CaixinhasFinanceiras({
 
               {/* Botões de Guardar e Resgatar */}
               <div className={`grid grid-cols-2 gap-2 mt-5 pt-3 border-t ${
-                isFornecedor ? 'border-[#f59e0b]/40' : 'border-[#f2f2f7]'
+                isFornecedor ? 'border-white/10' : 'border-[#f2f2f7]'
               }`}>
                 <button
                   onClick={() => {
@@ -494,11 +513,11 @@ export function CaixinhasFinanceiras({
                   }}
                   className={`flex items-center justify-center gap-1 rounded-xl py-2 text-xs font-bold transition-all cursor-pointer ${
                     isFornecedor
-                      ? 'bg-[#fde68a] hover:bg-[#fcd34d] border border-[#f59e0b] text-[#78350f]'
+                      ? 'bg-white/15 hover:bg-white/25 text-white'
                       : 'bg-[#f5f5f7] hover:bg-[#e8f8ee] hover:text-[#1a7f37] text-[#1d1d1f]'
                   }`}
                 >
-                  <ArrowDownLeft size={13} className="text-[#1a7f37]" />
+                  <ArrowDownLeft size={13} className={isFornecedor ? 'text-[#4ade80]' : 'text-[#1a7f37]'} />
                   <span>Guardar</span>
                 </button>
 
@@ -510,11 +529,11 @@ export function CaixinhasFinanceiras({
                   }}
                   className={`flex items-center justify-center gap-1 rounded-xl py-2 text-xs font-bold transition-all cursor-pointer ${
                     isFornecedor
-                      ? 'bg-[#fde68a] hover:bg-[#fcd34d] border border-[#f59e0b] text-[#78350f]'
+                      ? 'bg-white/15 hover:bg-white/25 text-white'
                       : 'bg-[#f5f5f7] hover:bg-[#feeceb] hover:text-[#cf222e] text-[#1d1d1f]'
                   }`}
                 >
-                  <ArrowUpRight size={13} className="text-[#cf222e]" />
+                  <ArrowUpRight size={13} className={isFornecedor ? 'text-[#f87171]' : 'text-[#cf222e]'} />
                   <span>Resgatar</span>
                 </button>
               </div>
