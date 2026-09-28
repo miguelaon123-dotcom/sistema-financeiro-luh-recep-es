@@ -495,24 +495,24 @@ export function FornecedoresClient({
         {/* 1. Fornecedores Cadastrados */}
         <div
           onClick={() => setActiveTab('fornecedores')}
-          className={`rounded-2xl border p-5 transition-all cursor-pointer shadow-xs ${
+          className={`rounded-2xl border-2 p-5 transition-all cursor-pointer shadow-xs ${
             activeTab === 'fornecedores'
-              ? 'border-[#f59e0b] bg-gradient-to-br from-[#fffdf5] to-[#fef3c7] ring-2 ring-[#f59e0b]/30 shadow-sm'
-              : 'border-[#fed7aa] bg-gradient-to-br from-[#fffdfa] to-[#fff7ed] hover:border-[#f59e0b]'
+              ? 'border-[#d97706] bg-[#fef3c7] ring-2 ring-[#d97706]/30 shadow-sm'
+              : 'border-[#f59e0b] bg-[#fef3c7] hover:border-[#d97706]'
           }`}
         >
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-[#b45309]">
+            <span className="text-xs font-bold uppercase tracking-wider text-[#78350f]">
               Fornecedores Parceiros
             </span>
-            <span className="rounded-full bg-[#fde68a] px-2 py-0.5 text-xs font-bold text-[#92400e]">
+            <span className="rounded-full bg-[#fde68a] border border-[#f59e0b] px-2.5 py-0.5 text-xs font-bold text-[#78350f]">
               {localSuppliers.length} ativos
             </span>
           </div>
-          <p className="mt-2 text-3xl font-bold tracking-tight text-[#b45309]">
+          <p className="mt-2 text-3xl font-bold tracking-tight text-[#78350f]">
             {localSuppliers.length}
           </p>
-          <span className="mt-1 block text-xs text-[#b45309]/80 font-medium">
+          <span className="mt-1 block text-xs text-[#92400e] font-semibold">
             Clique para ver a lista visual de parceiros
           </span>
         </div>
@@ -675,25 +675,25 @@ export function FornecedoresClient({
             const pix = activeSupp.document || (activeSupp.notes?.startsWith('Chave PIX: ') ? activeSupp.notes.replace('Chave PIX: ', '') : null)
 
             return (
-              <div className="rounded-2xl border border-[#fed7aa] bg-gradient-to-r from-[#fffbeb] to-[#fef3c7] p-4.5 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div className="rounded-2xl border-2 border-[#f59e0b] bg-[#fef3c7] p-4.5 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                 <div className="flex items-center gap-3.5">
-                  <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#f59e0b] to-[#d97706] text-white font-extrabold text-lg flex items-center justify-center shrink-0 shadow-xs ring-2 ring-[#fde68a]">
+                  <div className="w-12 h-12 rounded-2xl bg-[#d97706] text-[#451a03] font-black text-lg flex items-center justify-center shrink-0 shadow-xs ring-2 ring-[#f59e0b]">
                     {activeSupp.name.charAt(0).toUpperCase()}
                   </div>
                   <div>
                     <div className="flex items-center gap-2">
-                      <h4 className="font-bold text-base text-[#78350f]">{activeSupp.name}</h4>
+                      <h4 className="font-extrabold text-base text-[#78350f]">{activeSupp.name}</h4>
                       <button
                         onClick={() => setSupplierFilter('all')}
-                        className="text-[11px] font-bold text-[#b45309] hover:underline cursor-pointer bg-[#fde68a] px-2 py-0.5 rounded-full"
+                        className="text-[11px] font-bold text-[#78350f] hover:underline cursor-pointer bg-[#fde68a] border border-[#f59e0b] px-2.5 py-0.5 rounded-full"
                       >
                         (Mostrar todos)
                       </button>
                     </div>
                     <div className="flex items-center gap-3 text-xs text-[#92400e] mt-1.5 flex-wrap">
                       {activeSupp.phone && (
-                        <span className="flex items-center gap-1 font-semibold text-[#1f2937] bg-white/70 px-2 py-0.5 rounded-lg border border-[#fde68a]">
-                          <Phone size={12} className="text-[#1a7f37]" />
+                        <span className="flex items-center gap-1 font-bold text-[#14532d] bg-[#dcfce7] px-2.5 py-1 rounded-lg border border-[#86efac]">
+                          <Phone size={12} className="text-[#16a34a]" />
                           {formatPhone(activeSupp.phone)}
                         </span>
                       )}
@@ -702,16 +702,16 @@ export function FornecedoresClient({
                           href={`https://wa.me/55${cleanPh}`}
                           target="_blank"
                           rel="noreferrer"
-                          className="inline-flex items-center gap-1 text-[11px] font-bold text-white hover:opacity-90 bg-[#16a34a] px-2.5 py-1 rounded-lg shadow-2xs"
+                          className="inline-flex items-center gap-1 text-[11px] font-black text-[#052e16] hover:opacity-90 bg-[#86efac] border border-[#16a34a] px-2.5 py-1 rounded-lg shadow-2xs"
                         >
                           <MessageCircle size={12} />
                           WhatsApp
                         </a>
                       )}
                       {pix && (
-                        <span className="flex items-center gap-1.5 bg-[#eff6ff] px-2.5 py-1 rounded-lg border border-[#bfdbfe] text-[#1e40af]">
-                          <QrCode size={12} className="text-[#2563eb]" />
-                          PIX: <strong className="font-mono text-[#1e40af]">{formatDoc(pix)}</strong>
+                        <span className="flex items-center gap-1.5 bg-[#fde68a] px-2.5 py-1 rounded-lg border border-[#f59e0b] text-[#78350f] font-bold">
+                          <QrCode size={12} className="text-[#d97706]" />
+                          PIX: <strong className="font-mono text-[#78350f]">{formatDoc(pix)}</strong>
                         </span>
                       )}
                     </div>
@@ -1101,15 +1101,15 @@ export function FornecedoresClient({
       {activeTab === 'fornecedores' && (
         <div className="space-y-4">
           {/* Barra de Busca */}
-          <div className="flex items-center justify-between bg-white p-3.5 rounded-2xl border border-[#e5e5ea] shadow-xs">
+          <div className="flex items-center justify-between bg-[#fef3c7] p-3.5 rounded-2xl border border-[#fde68a] shadow-xs">
             <div className="relative w-full max-w-md">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[#86868b]" size={15} />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[#b45309]" size={15} />
               <input
                 type="text"
                 placeholder="Buscar por nome, telefone, CNPJ ou especialidade..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-9 pr-3.5 py-1.5 bg-[#f5f5f7] border border-transparent rounded-xl text-xs text-[#1d1d1f] placeholder-[#86868b] focus:border-[#1d1d1f] focus:bg-white focus:outline-none transition-all"
+                className="w-full pl-9 pr-3.5 py-2 bg-[#fffbeb] border border-[#fde68a] rounded-xl text-xs font-semibold text-[#78350f] placeholder-[#b45309]/70 focus:border-[#d97706] focus:bg-[#fef3c7] focus:outline-none transition-all"
               />
             </div>
           </div>
@@ -1129,27 +1129,27 @@ export function FornecedoresClient({
                 return (
                   <div
                     key={s.id}
-                    className="rounded-2xl border border-[#fed7aa] bg-gradient-to-b from-[#fffefc] to-[#fff7ed] p-5 shadow-xs hover:border-[#f59e0b] hover:shadow-md transition-all flex flex-col justify-between relative overflow-hidden group"
+                    className="rounded-2xl border-2 border-[#f59e0b] bg-[#fef3c7] p-5 shadow-xs hover:border-[#d97706] hover:shadow-md transition-all flex flex-col justify-between relative overflow-hidden group"
                   >
-                    <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-[#f59e0b] via-[#ea580c] to-[#d97706]" />
+                    <div className="absolute top-0 left-0 right-0 h-1.5 bg-[#d97706]" />
                     <div>
                       {/* Topo do Card com Avatar e Nome */}
                       <div className="flex items-start justify-between gap-3 mb-4">
                         <div className="flex items-center gap-3 min-w-0">
-                          <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-[#f59e0b] to-[#d97706] text-white font-extrabold text-base flex items-center justify-center shrink-0 shadow-xs ring-2 ring-[#fde68a]">
+                          <div className="w-11 h-11 rounded-2xl bg-[#d97706] text-[#451a03] font-black text-lg flex items-center justify-center shrink-0 shadow-xs ring-2 ring-[#f59e0b]">
                             {s.name.charAt(0).toUpperCase()}
                           </div>
                           <div className="min-w-0">
-                            <h3 className="font-bold text-base text-[#78350f] truncate" title={s.name}>
+                            <h3 className="font-extrabold text-base text-[#78350f] truncate" title={s.name}>
                               {s.name}
                             </h3>
                             <span className="text-[11px] block mt-0.5">
                               {sPending > 0 ? (
-                                <span className="font-bold text-[#cf222e] bg-[#feeceb] px-2 py-0.5 rounded-full inline-block">
+                                <span className="font-bold text-[#991b1b] bg-[#fee2e2] border border-[#fca5a5] px-2 py-0.5 rounded-full inline-block">
                                   R$ {sPending.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} a pagar
                                 </span>
                               ) : (
-                                <span className="font-semibold text-[#1a7f37] bg-[#e8f8ee] px-2 py-0.5 rounded-full inline-block">
+                                <span className="font-bold text-[#166534] bg-[#dcfce7] border border-[#86efac] px-2 py-0.5 rounded-full inline-block">
                                   ✓ Sem pendências
                                 </span>
                               )}
@@ -1164,14 +1164,14 @@ export function FornecedoresClient({
                               setEditingSupplier(s)
                               setSupplierModalOpen(true)
                             }}
-                            className="rounded-lg p-1.5 text-[#86868b] hover:bg-[#fed7aa]/50 hover:text-[#78350f] transition-colors cursor-pointer"
+                            className="rounded-lg p-1.5 text-[#92400e] hover:bg-[#fde68a] hover:text-[#78350f] transition-colors cursor-pointer"
                             title="Editar fornecedor"
                           >
                             <Pencil size={15} />
                           </button>
                           <button
                             onClick={() => handleDeleteSupplier(s.id, s.name)}
-                            className="rounded-lg p-1.5 text-[#86868b] hover:bg-[#feeceb] hover:text-[#cf222e] transition-colors cursor-pointer"
+                            className="rounded-lg p-1.5 text-[#92400e] hover:bg-[#fee2e2] hover:text-[#b91c1c] transition-colors cursor-pointer"
                             title="Excluir fornecedor"
                           >
                             <Trash2 size={15} />
@@ -1180,10 +1180,10 @@ export function FornecedoresClient({
                       </div>
 
                       {/* Informações de Contato e Chave PIX */}
-                      <div className="space-y-2.5 text-xs text-[#6e6e73] mb-4">
+                      <div className="space-y-2.5 text-xs text-[#78350f] mb-4">
                         {s.phone && (
-                          <div className="flex items-center justify-between bg-[#f0fdf4] p-2 rounded-xl border border-[#bbf7d0]">
-                            <span className="flex items-center gap-1.5 font-semibold text-[#166534]">
+                          <div className="flex items-center justify-between bg-[#dcfce7] p-2.5 rounded-xl border border-[#86efac]">
+                            <span className="flex items-center gap-1.5 font-bold text-[#14532d]">
                               <Phone size={13} className="text-[#16a34a]" />
                               <span>{formatPhone(s.phone)}</span>
                             </span>
@@ -1192,7 +1192,7 @@ export function FornecedoresClient({
                                 href={`https://wa.me/55${cleanPhone}`}
                                 target="_blank"
                                 rel="noreferrer"
-                                className="inline-flex items-center gap-1 text-[11px] font-bold text-white hover:opacity-90 bg-[#16a34a] px-2.5 py-1 rounded-lg transition-colors shadow-2xs"
+                                className="inline-flex items-center gap-1 text-[11px] font-black text-[#052e16] hover:opacity-90 bg-[#86efac] border border-[#16a34a] px-2.5 py-1 rounded-lg transition-colors shadow-2xs"
                               >
                                 <MessageCircle size={13} />
                                 WhatsApp
@@ -1203,12 +1203,12 @@ export function FornecedoresClient({
 
                         {/* Chave PIX com botão de copiar em um clique */}
                         {pixKey && (
-                          <div className="flex items-center justify-between p-2.5 rounded-xl bg-[#eff6ff] border border-[#bfdbfe] text-xs">
+                          <div className="flex items-center justify-between p-2.5 rounded-xl bg-[#fde68a] border border-[#f59e0b] text-xs">
                             <div className="flex items-center gap-2 min-w-0 pr-2">
-                              <QrCode size={14} className="text-[#2563eb] shrink-0" />
+                              <QrCode size={14} className="text-[#d97706] shrink-0" />
                               <div className="min-w-0">
-                                <span className="text-[10px] font-bold text-[#1d4ed8] block uppercase">Chave PIX:</span>
-                                <span className="font-mono text-xs font-bold text-[#1e40af] truncate block" title={pixKey}>
+                                <span className="text-[10px] font-bold text-[#92400e] block uppercase">Chave PIX:</span>
+                                <span className="font-mono text-xs font-bold text-[#78350f] truncate block" title={pixKey}>
                                   {formatDoc(pixKey)}
                                 </span>
                               </div>
@@ -1220,21 +1220,21 @@ export function FornecedoresClient({
                                 setCopiedPixId(s.id)
                                 setTimeout(() => setCopiedPixId(null), 2000)
                               }}
-                              className={`shrink-0 px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors shadow-2xs ${
+                              className={`shrink-0 px-2.5 py-1.5 rounded-lg text-[11px] font-black flex items-center gap-1 cursor-pointer transition-colors shadow-2xs border ${
                                 copiedPixId === s.id
-                                  ? 'bg-[#16a34a] text-white'
-                                  : 'bg-[#2563eb] hover:bg-[#1d4ed8] text-white'
+                                  ? 'bg-[#16a34a] text-[#f0fdf4] border-[#15803d]'
+                                  : 'bg-[#d97706] hover:bg-[#b45309] text-[#fef3c7] border-[#b45309]'
                               }`}
                               title="Copiar Chave PIX"
                             >
                               {copiedPixId === s.id ? (
                                 <>
-                                  <Check size={12} className="text-white" />
+                                  <Check size={12} className="text-[#f0fdf4]" />
                                   <span>Copiado!</span>
                                 </>
                               ) : (
                                 <>
-                                  <Copy size={12} className="text-white" />
+                                  <Copy size={12} className="text-[#fef3c7]" />
                                   <span>Copiar</span>
                                 </>
                               )}
@@ -1243,14 +1243,14 @@ export function FornecedoresClient({
                         )}
 
                         {s.email && (
-                          <div className="flex items-center gap-1.5 text-[#92400e] px-1 font-medium">
+                          <div className="flex items-center gap-1.5 text-[#92400e] px-1 font-bold">
                             <Mail size={13} className="text-[#b45309]" />
                             <span className="truncate">{s.email}</span>
                           </div>
                         )}
 
                         {otherNotes && (
-                          <div className="p-2.5 bg-[#fefce8] rounded-xl border border-[#fef08a] text-[11px] text-[#713f12]">
+                          <div className="p-2.5 bg-[#fde68a] rounded-xl border border-[#f59e0b] text-[11px] text-[#713f12]">
                             <span className="font-bold block text-[#854d0e] text-[10px] uppercase">Observações:</span>
                             <span>{otherNotes}</span>
                           </div>
@@ -1259,18 +1259,18 @@ export function FornecedoresClient({
                     </div>
 
                     {/* Resumo Financeiro & Ações */}
-                    <div className="pt-3 border-t border-[#fed7aa]/50 space-y-2.5">
+                    <div className="pt-3 border-t border-[#f59e0b]/40 space-y-2.5">
                       <div className="grid grid-cols-2 gap-2 text-xs">
-                        <div className="p-2 bg-[#fff8e6] rounded-xl border border-[#fee4a6]">
-                          <span className="text-[10px] font-bold text-[#b8860b] block uppercase">Pendente</span>
-                          <span className="font-bold text-xs text-[#b8860b]">
+                        <div className="p-2.5 bg-[#fee2e2] rounded-xl border border-[#fca5a5]">
+                          <span className="text-[10px] font-bold text-[#991b1b] block uppercase">Pendente</span>
+                          <span className="font-extrabold text-xs text-[#991b1b]">
                             R$ {sPending.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                           </span>
                         </div>
 
-                        <div className="p-2 bg-[#e8f8ee] rounded-xl border border-[#b4e8c7]">
-                          <span className="text-[10px] font-bold text-[#1a7f37] block uppercase">Já Pago</span>
-                          <span className="font-bold text-xs text-[#1a7f37]">
+                        <div className="p-2.5 bg-[#dcfce7] rounded-xl border border-[#86efac]">
+                          <span className="text-[10px] font-bold text-[#166534] block uppercase">Já Pago</span>
+                          <span className="font-extrabold text-xs text-[#166534]">
                             R$ {sPaid.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                           </span>
                         </div>
@@ -1283,7 +1283,7 @@ export function FornecedoresClient({
                             setSelectedSupplierForBill(s.id)
                             setBillModalOpen(true)
                           }}
-                          className="flex-1 flex items-center justify-center gap-1.5 rounded-xl bg-[#d97706] hover:bg-[#b45309] py-2.5 text-xs font-bold text-white transition-all shadow-xs cursor-pointer"
+                          className="flex-1 flex items-center justify-center gap-1.5 rounded-xl bg-[#d97706] hover:bg-[#b45309] border border-[#b45309] py-2.5 text-xs font-black text-[#fef3c7] transition-all shadow-xs cursor-pointer"
                         >
                           <Plus size={14} />
                           <span>+ Lançar Boleto</span>
@@ -1294,7 +1294,7 @@ export function FornecedoresClient({
                             setSupplierFilter(s.id)
                             setActiveTab('contas')
                           }}
-                          className="flex items-center justify-center gap-1 rounded-xl bg-[#fef3c7] hover:bg-[#fde68a] border border-[#fde68a] px-3 py-2.5 text-xs font-bold text-[#92400e] transition-colors cursor-pointer"
+                          className="flex items-center justify-center gap-1 rounded-xl bg-[#fde68a] hover:bg-[#fcd34d] border border-[#f59e0b] px-3 py-2.5 text-xs font-black text-[#78350f] transition-colors cursor-pointer"
                           title="Ver histórico de contas"
                         >
                           <span>Contas ({sTxs.length})</span>
@@ -1305,7 +1305,7 @@ export function FornecedoresClient({
                 )
               })
             ) : (
-              <div className="col-span-full rounded-2xl border border-[#e5e5ea] bg-white p-12 text-center text-[#86868b]">
+              <div className="col-span-full rounded-2xl border border-[#fde68a] bg-[#fef3c7] p-12 text-center text-[#92400e] font-semibold">
                 Nenhum fornecedor encontrado para esta busca.
               </div>
             )}

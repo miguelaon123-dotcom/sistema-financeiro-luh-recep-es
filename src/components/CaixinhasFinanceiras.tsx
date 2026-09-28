@@ -377,12 +377,12 @@ export function CaixinhasFinanceiras({
               key={caixinha.id}
               className={`relative flex flex-col justify-between rounded-3xl border p-5 shadow-2xs hover:shadow-md transition-all duration-200 group overflow-hidden ${
                 isFornecedor
-                  ? 'border-[#fed7aa] bg-gradient-to-b from-[#fffdfa] to-[#fff7ed] hover:border-[#f59e0b]'
+                  ? 'border-2 border-[#f59e0b] bg-[#fef3c7] hover:border-[#d97706]'
                   : 'border-[#e5e5ea] bg-white hover:border-[#1d1d1f]/40'
               }`}
             >
               {isFornecedor && (
-                <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-[#f59e0b] via-[#ea580c] to-[#d97706]" />
+                <div className="absolute top-0 left-0 right-0 h-1.5 bg-[#d97706]" />
               )}
               <div>
                 {/* Topo da Caixinha */}
@@ -483,14 +483,20 @@ export function CaixinhasFinanceiras({
               </div>
 
               {/* Botões de Guardar e Resgatar */}
-              <div className="grid grid-cols-2 gap-2 mt-5 pt-3 border-t border-[#f2f2f7]">
+              <div className={`grid grid-cols-2 gap-2 mt-5 pt-3 border-t ${
+                isFornecedor ? 'border-[#f59e0b]/40' : 'border-[#f2f2f7]'
+              }`}>
                 <button
                   onClick={() => {
                     setErrorMessage(null)
                     setDepositModalCaixinha(caixinha)
                     setActionAmount('')
                   }}
-                  className="flex items-center justify-center gap-1 rounded-xl bg-[#f5f5f7] hover:bg-[#e8f8ee] hover:text-[#1a7f37] text-[#1d1d1f] py-2 text-xs font-semibold transition-all cursor-pointer"
+                  className={`flex items-center justify-center gap-1 rounded-xl py-2 text-xs font-bold transition-all cursor-pointer ${
+                    isFornecedor
+                      ? 'bg-[#fde68a] hover:bg-[#fcd34d] border border-[#f59e0b] text-[#78350f]'
+                      : 'bg-[#f5f5f7] hover:bg-[#e8f8ee] hover:text-[#1a7f37] text-[#1d1d1f]'
+                  }`}
                 >
                   <ArrowDownLeft size={13} className="text-[#1a7f37]" />
                   <span>Guardar</span>
@@ -502,7 +508,11 @@ export function CaixinhasFinanceiras({
                     setWithdrawModalCaixinha(caixinha)
                     setActionAmount('')
                   }}
-                  className="flex items-center justify-center gap-1 rounded-xl bg-[#f5f5f7] hover:bg-[#feeceb] hover:text-[#cf222e] text-[#1d1d1f] py-2 text-xs font-semibold transition-all cursor-pointer"
+                  className={`flex items-center justify-center gap-1 rounded-xl py-2 text-xs font-bold transition-all cursor-pointer ${
+                    isFornecedor
+                      ? 'bg-[#fde68a] hover:bg-[#fcd34d] border border-[#f59e0b] text-[#78350f]'
+                      : 'bg-[#f5f5f7] hover:bg-[#feeceb] hover:text-[#cf222e] text-[#1d1d1f]'
+                  }`}
                 >
                   <ArrowUpRight size={13} className="text-[#cf222e]" />
                   <span>Resgatar</span>
