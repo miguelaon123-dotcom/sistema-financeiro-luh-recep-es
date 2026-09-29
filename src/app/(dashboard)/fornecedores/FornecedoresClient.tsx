@@ -299,8 +299,23 @@ export function FornecedoresClient({
     return doc
   }
 
-  // Filtrar apenas despesas ligadas a fornecedores
-  const supplierTxs = transactions.filter((t) => t.type === 'expense')
+  // Filtrar apenas despesas legítimas ligadas a fornecedores
+  const supplierTxs = useMemo(() => {
+    return (transactions || []).filter((t) => {
+      if (t.type !== 'expense') return false
+      if (!t.contact_id) return false
+      const desc = (t.description || '').toLowerCase()
+      if (
+        desc.includes('ajuste de saldo') ||
+        desc.includes('conciliação') ||
+        desc.includes('saldo inicial') ||
+        desc.includes('caixinha')
+      ) {
+        return false
+      }
+      return true
+    })
+  }, [transactions])
 
   // Cálculos consolidados
   const pendingBills = supplierTxs.filter((t) => t.status === 'pending')

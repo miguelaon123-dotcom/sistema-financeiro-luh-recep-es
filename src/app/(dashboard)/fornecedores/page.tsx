@@ -33,13 +33,30 @@ export default async function FornecedoresPage({
             contacts(id, name), events(id, title)
           `)
           .eq('type', 'expense')
+          .not('contact_id', 'is', null)
           .order('due_date', { ascending: false }),
         supabase.from('events').select('id, title').order('event_date', { ascending: true }),
         getCaixinhas(),
       ])
+
+      const rawTxs = (txsRes.data as any[]) || []
+      const supplierTxs = rawTxs.filter((t: any) => {
+        if (!t.contact_id) return false
+        const desc = (t.description || '').toLowerCase()
+        if (
+          desc.includes('ajuste de saldo') ||
+          desc.includes('conciliação') ||
+          desc.includes('saldo inicial') ||
+          desc.includes('caixinha')
+        ) {
+          return false
+        }
+        return true
+      })
+
       return {
         suppliers: suppliersRes.data || [],
-        transactions: (txsRes.data as any) || [],
+        transactions: supplierTxs,
         events: eventsRes.data || [],
         caixinhas: cx || [],
       }
