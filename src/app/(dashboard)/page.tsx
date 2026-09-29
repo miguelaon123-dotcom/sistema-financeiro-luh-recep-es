@@ -19,6 +19,9 @@ import { DashboardKpis } from '@/components/DashboardKpis'
 
 import { getCachedData } from '@/lib/data-cache'
 
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
 export default async function DashboardPage() {
   const supabase = createAdminClient()
 
@@ -143,7 +146,8 @@ export default async function DashboardPage() {
     (acc, c) => acc + Number(c.current_balance || 0),
     0
   )
-  const freeCashBalance = Math.max(0, cashBalance - totalInCaixinhas)
+  // O saldo em conta bancária (cashBalance) já é o saldo livre, pois as caixinhas já foram retiradas
+  const freeCashBalance = cashBalance
 
   const monthName = now.toLocaleString('pt-BR', { month: 'long' })
 

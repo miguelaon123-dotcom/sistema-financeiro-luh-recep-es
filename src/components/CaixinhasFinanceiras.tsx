@@ -34,12 +34,14 @@ interface CaixinhasFinanceirasProps {
   initialCaixinhas: Caixinha[]
   totalCashBalance?: number
   compactView?: boolean
+  onCaixinhasChange?: (caixinhas: Caixinha[]) => void
 }
 
 export function CaixinhasFinanceiras({
   initialCaixinhas,
   totalCashBalance = 0,
   compactView = false,
+  onCaixinhasChange,
 }: CaixinhasFinanceirasProps) {
   const router = useRouter()
   const [caixinhas, setCaixinhas] = useState<Caixinha[]>(initialCaixinhas)
@@ -65,8 +67,8 @@ export function CaixinhasFinanceiras({
 
   // Cálculos consolidados
   const totalInCaixinhas = caixinhas.reduce((acc, c) => acc + Number(c.current_balance || 0), 0)
-  const totalTargetInCaixinhas = caixinhas.reduce((acc, c) => acc + Number(c.target_balance || 0), 0)
-  const freeCashBalance = Math.max(0, totalCashBalance - totalInCaixinhas)
+  // O saldo em conta bancária (totalCashBalance) já é o saldo livre, pois as caixinhas já foram retiradas
+  const freeCashBalance = totalCashBalance
 
   // Helper de Ícones
   const getIcon = (iconName: string) => {
@@ -109,7 +111,9 @@ export function CaixinhasFinanceiras({
         setErrorMessage(res.error)
       } else {
         if (res.caixinha) {
-          setCaixinhas((prev) => [...prev, res.caixinha!])
+          const next = [...caixinhas, res.caixinha!]
+          setCaixinhas(next)
+          onCaixinhasChange?.(next)
         }
         setCreateModalOpen(false)
         setSuccessMessage('Caixinha criada com sucesso!')
@@ -130,21 +134,21 @@ export function CaixinhasFinanceiras({
       if (res.error) {
         setErrorMessage(res.error)
       } else {
-        setCaixinhas((prev) =>
-          prev.map((c) =>
-            c.id === id
-              ? {
-                  ...c,
-                  name: (formData.get('name') as string)?.trim() || c.name,
-                  target_balance: Number(formData.get('target_balance') || c.target_balance),
-                  category: (formData.get('category') as string) || c.category,
-                  color: (formData.get('color') as string) || c.color,
-                  icon: (formData.get('icon') as string) || c.icon,
-                  notes: (formData.get('notes') as string)?.trim() || c.notes,
-                }
-              : c
-          )
+        const next = caixinhas.map((c) =>
+          c.id === id
+            ? {
+                ...c,
+                name: (formData.get('name') as string)?.trim() || c.name,
+                target_balance: Number(formData.get('target_balance') || c.target_balance),
+                category: (formData.get('category') as string) || c.category,
+                color: (formData.get('color') as string) || c.color,
+                icon: (formData.get('icon') as string) || c.icon,
+                notes: (formData.get('notes') as string)?.trim() || c.notes,
+              }
+            : c
         )
+        setCaixinhas(next)
+        onCaixinhasChange?.(next)
         setEditModalCaixinha(null)
         setSuccessMessage('Caixinha atualizada com sucesso!')
         router.refresh()
@@ -175,9 +179,11 @@ export function CaixinhasFinanceiras({
       if (res.error) {
         setErrorMessage(res.error)
       } else {
-        setCaixinhas((prev) =>
-          prev.map((c) => (c.id === id ? { ...c, current_balance: c.current_balance + amount } : c))
+        const next = caixinhas.map((c) =>
+          c.id === id ? { ...c, current_balance: c.current_balance + amount } : c
         )
+        setCaixinhas(next)
+        onCaixinhasChange?.(next)
         setDepositModalCaixinha(null)
         setActionAmount('')
         setSuccessMessage('Valor guardado com sucesso na caixinha!')
@@ -211,11 +217,11 @@ export function CaixinhasFinanceiras({
       if (res.error) {
         setErrorMessage(res.error)
       } else {
-        setCaixinhas((prev) =>
-          prev.map((c) =>
-            c.id === id ? { ...c, current_balance: c.current_balance - amountNum } : c
-          )
+        const next = caixinhas.map((c) =>
+          c.id === id ? { ...c, current_balance: c.current_balance - amountNum } : c
         )
+        setCaixinhas(next)
+        onCaixinhasChange?.(next)
         setWithdrawModalCaixinha(null)
         setActionAmount('')
         setSuccessMessage('Valor resgatado com sucesso!')
@@ -251,9 +257,11 @@ export function CaixinhasFinanceiras({
       if (res.error) {
         setErrorMessage(res.error)
       } else {
-        setCaixinhas((prev) =>
-          prev.map((c) => (c.id === id ? { ...c, current_balance: newBalance } : c))
+        const next = caixinhas.map((c) =>
+          c.id === id ? { ...c, current_balance: newBalance } : c
         )
+        setCaixinhas(next)
+        onCaixinhasChange?.(next)
         setAdjustBalanceCaixinha(null)
         setActionAmount('')
         setSuccessMessage('Saldo da caixinha ajustado com sucesso!')
@@ -276,7 +284,9 @@ export function CaixinhasFinanceiras({
       return
     }
 
-    setCaixinhas((prev) => prev.filter((c) => c.id !== id))
+    const next = caixinhas.filter((c) => c.id !== id)
+    setCaixinhas(next)
+    onCaixinhasChange?.(next)
     setDeleteConfirmCaixinha(null)
     setSuccessMessage('Caixinha removida com sucesso!')
     setTimeout(() => setSuccessMessage(null), 3500)
@@ -329,19 +339,28 @@ export function CaixinhasFinanceiras({
         <div className="flex flex-wrap items-center gap-3 self-start sm:self-auto">
           <div className="text-right hidden sm:block border-r border-[#f2f2f7] pr-3">
             <span className="text-[10px] font-semibold uppercase tracking-wider text-[#86868b] block">
-              Saldo Livre em Caixa
+              Saldo em Conta (Livre)
             </span>
             <span className="text-sm font-bold text-[#1a7f37]">
-              R$ {freeCashBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+              R$ {totalCashBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
             </span>
           </div>
 
-          <div className="text-right mr-1 hidden sm:block">
+          <div className="text-right hidden sm:block border-r border-[#f2f2f7] pr-3">
             <span className="text-[10px] font-semibold uppercase tracking-wider text-[#86868b] block">
               Total em Caixinhas
             </span>
             <span className="text-sm font-bold text-[#1d1d1f]">
               R$ {totalInCaixinhas.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+            </span>
+          </div>
+
+          <div className="text-right mr-1 hidden sm:block">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-[#86868b] block">
+              Patrimônio Total
+            </span>
+            <span className="text-sm font-bold text-[#1d1d1f]">
+              R$ {(totalCashBalance + totalInCaixinhas).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
             </span>
           </div>
 
@@ -594,7 +613,7 @@ export function CaixinhasFinanceiras({
 
                 <div className="rounded-2xl bg-[#fafafc] p-3 border border-[#f2f2f7]">
                   <span className="text-[10px] font-semibold text-[#1a7f37] uppercase tracking-wider block">
-                    Saldo Livre em Caixa
+                    Saldo Disponível na Conta
                   </span>
                   <span className="text-base font-bold text-[#1a7f37]">
                     R${' '}
@@ -609,7 +628,7 @@ export function CaixinhasFinanceiras({
                 <div className="rounded-xl border border-[#feeceb] bg-[#fff5f5] p-3 text-xs text-[#cf222e] flex items-start gap-2">
                   <AlertTriangle size={16} className="shrink-0 mt-0.5" />
                   <span>
-                    <strong>Saldo livre zerado!</strong> Você não possui saldo real livre em caixa para guardar em caixinhas. Valores pendentes "A Receber" ainda não entraram na conta.
+                    <strong>Saldo disponível zerado!</strong> Você não possui saldo livre na conta para guardar em caixinhas. Valores pendentes "A Receber" ainda não entraram na conta.
                   </span>
                 </div>
               )}
@@ -641,20 +660,34 @@ export function CaixinhasFinanceiras({
                 <div className="rounded-xl border border-[#feeceb] bg-[#fff5f5] p-2.5 text-xs text-[#cf222e] font-medium flex items-center gap-1.5">
                   <AlertTriangle size={14} />
                   <span>
-                    Valor excede o saldo livre disponível (R$ {freeCashBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}).
+                    Valor excede o saldo livre disponível na conta (R$ {freeCashBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}).
                   </span>
                 </div>
               )}
 
               {Number(actionAmount) > 0 && Number(actionAmount) <= freeCashBalance && (
-                <div className="rounded-xl bg-[#e8f8ee] p-2.5 text-xs text-[#1a7f37] font-medium flex items-center justify-between">
-                  <span>Novo saldo da caixinha:</span>
-                  <strong>
-                    R${' '}
-                    {(
-                      depositModalCaixinha.current_balance + Number(actionAmount)
-                    ).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                  </strong>
+                <div className="rounded-xl bg-[#e8f8ee] p-3 text-xs text-[#1a7f37] space-y-1.5 border border-[#b4e8c7]">
+                  <div className="flex items-center justify-between font-medium">
+                    <span>Novo saldo da caixinha:</span>
+                    <strong>
+                      R${' '}
+                      {(
+                        depositModalCaixinha.current_balance + Number(actionAmount)
+                      ).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                    </strong>
+                  </div>
+                  <div className="flex items-center justify-between text-[#2c6e3b] text-[11px] pt-1 border-t border-[#b4e8c7]">
+                    <span>Novo saldo disponível na conta:</span>
+                    <strong>
+                      R${' '}
+                      {(
+                        freeCashBalance - Number(actionAmount)
+                      ).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                    </strong>
+                  </div>
+                  <p className="text-[10px] text-[#2c6e3b] pt-0.5">
+                    💳 O valor de R$ {Number(actionAmount).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} sairá do Saldo da Conta e ficará guardado nesta caixinha.
+                  </p>
                 </div>
               )}
 
@@ -764,14 +797,28 @@ export function CaixinhasFinanceiras({
                   </span>
                 </div>
               ) : Number(actionAmount) > 0 ? (
-                <div className="rounded-xl bg-[#f5f5f7] p-2.5 text-xs text-[#48484a] font-medium flex items-center justify-between">
-                  <span>Saldo restante na caixinha:</span>
-                  <strong>
-                    R${' '}
-                    {(
-                      withdrawModalCaixinha.current_balance - Number(actionAmount)
-                    ).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                  </strong>
+                <div className="rounded-xl bg-[#e8f8ee] p-3 text-xs text-[#1a7f37] space-y-1.5 border border-[#b4e8c7]">
+                  <div className="flex items-center justify-between font-medium">
+                    <span>Saldo restante na caixinha:</span>
+                    <strong>
+                      R${' '}
+                      {(
+                        withdrawModalCaixinha.current_balance - Number(actionAmount)
+                      ).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                    </strong>
+                  </div>
+                  <div className="flex items-center justify-between text-[#2c6e3b] text-[11px] pt-1 border-t border-[#b4e8c7]">
+                    <span>Novo saldo disponível na conta:</span>
+                    <strong>
+                      R${' '}
+                      {(
+                        freeCashBalance + Number(actionAmount)
+                      ).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                    </strong>
+                  </div>
+                  <p className="text-[10px] text-[#2c6e3b] pt-0.5">
+                    💳 O valor de R$ {Number(actionAmount).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} voltará imediatamente para o Saldo da Conta.
+                  </p>
                 </div>
               ) : null}
 

@@ -127,6 +127,7 @@ export async function createSupplierExpense(formData: FormData) {
   const due_date = (formData.get('due_date') as string) || new Date().toISOString().split('T')[0]
   const status = (formData.get('status') as string) || 'pending'
   const event_id = (formData.get('event_id') as string) || null
+  const items_json = formData.get('items_json') as string
 
   if (!supplier_id || !description || !amount || amount <= 0) {
     return { error: 'Preencha o fornecedor, descrição e um valor válido.' }
@@ -144,7 +145,9 @@ export async function createSupplierExpense(formData: FormData) {
     created_by: userId || null,
   }
 
-  let { error } = await supabase.from('financial_transactions').insert(insertPayload)
+  let res = await supabase.from('financial_transactions').insert(insertPayload).select('id').single()
+  let error = res.error
+  let data = res.data
 
   if (
     error &&
@@ -153,13 +156,28 @@ export async function createSupplierExpense(formData: FormData) {
       error.details?.includes('created_by'))
   ) {
     delete insertPayload.created_by
-    const retry = await supabase.from('financial_transactions').insert(insertPayload)
+    const retry = await supabase.from('financial_transactions').insert(insertPayload).select('id').single()
     error = retry.error
+    data = retry.data
   }
 
   if (error) {
     console.error('Erro ao lançar conta do fornecedor:', error)
     return { error: error.message }
+  }
+
+  if (items_json) {
+    try {
+      await supabase.from('audit_logs').insert({
+        action: 'boleto_itens',
+        table_name: 'financial_transactions',
+        record_id: data?.id || null,
+        user_id: userId,
+        new_data: { items: JSON.parse(items_json), supplier_id, amount },
+      })
+    } catch (e) {
+      // Non-blocking log
+    }
   }
 
   invalidateCache(['fornecedores', 'financeiro', 'dashboard'])
@@ -184,6 +202,64 @@ export async function paySupplierExpense(id: string) {
   if (error) {
     console.error('Erro ao liquidar conta de fornecedor:', error)
     return { error: error.message }
+  }
+
+  invalidateCache(['fornecedores', 'financeiro', 'dashboard'])
+  revalidatePath('/fornecedores')
+  revalidatePath('/financeiro')
+  revalidatePath('/')
+  return { success: true }
+}
+
+export async function updateSupplierExpense(formData: FormData) {
+  const supabase = createAdminClient()
+  const id = formData.get('id') as string
+  const supplier_id = formData.get('supplier_id') as string
+  const description = (formData.get('description') as string)?.trim()
+  const amount = Number(formData.get('amount'))
+  const due_date = (formData.get('due_date') as string) || new Date().toISOString().split('T')[0]
+  const status = (formData.get('status') as string) || 'pending'
+  const event_id = (formData.get('event_id') as string) || null
+  const items_json = formData.get('items_json') as string
+
+  if (!id || !supplier_id || !description || !amount || amount <= 0) {
+    return { error: 'Preencha o fornecedor, descrição e um valor válido.' }
+  }
+
+  const updatePayload: Record<string, any> = {
+    contact_id: supplier_id,
+    description: description,
+    amount: amount,
+    due_date: due_date,
+    status: status,
+    event_id: event_id || null,
+    paid_date: status === 'paid' ? new Date().toISOString().split('T')[0] : null,
+  }
+
+  const { error } = await supabase
+    .from('financial_transactions')
+    .update(updatePayload)
+    .eq('id', id)
+
+  if (error) {
+    console.error('Erro ao atualizar conta do fornecedor:', error)
+    return { error: error.message }
+  }
+
+  if (items_json) {
+    try {
+      const headersList = await headers()
+      const userId = headersList.get('x-user-id') || null
+      await supabase.from('audit_logs').insert({
+        action: 'boleto_itens_update',
+        table_name: 'financial_transactions',
+        record_id: id,
+        user_id: userId,
+        new_data: { items: JSON.parse(items_json), supplier_id, amount },
+      })
+    } catch (e) {
+      // Non-blocking log
+    }
   }
 
   invalidateCache(['fornecedores', 'financeiro', 'dashboard'])

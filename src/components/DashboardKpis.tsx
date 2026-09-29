@@ -161,7 +161,7 @@ export function DashboardKpis({
     (acc, c) => acc + Number(c.current_balance || 0),
     0
   )
-  const freeCashBalance = Math.max(0, cashBalance - totalInCaixinhas)
+  const freeCashBalance = cashBalance
 
   const pendingIncomeAll = transactions
     .filter((t) => t.type === 'income' && t.status === 'pending')
@@ -282,15 +282,15 @@ export function DashboardKpis({
 
       {/* KPI Cards Dinâmicos */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
-        {/* 1. Saldo em Caixa / Entradas Pagas no Mês */}
+        {/* 1. Saldo em Caixa (Livre) */}
         <Link
-          href="/financeiro?action=ajustar-saldo"
+          href="/financeiro"
           className="group block rounded-2xl border border-[#e5e5ea] bg-white p-5 shadow-xs transition-all duration-150 hover:border-[#0071e3]/40 hover:shadow-sm"
-          title="Clique para ajustar o saldo real da conta bancária"
+          title="Ver movimentações no Financeiro"
         >
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold uppercase tracking-wider text-[#6e6e73]">
-              {isPeriodFiltered ? 'Entradas no Mês' : 'Saldo em Caixa'}
+              Saldo em Caixa (Livre)
             </span>
             <div className="rounded-xl bg-[#e8f8ee] p-2 text-[#1a7f37]">
               <Wallet className="h-4 w-4" strokeWidth={2.2} />
@@ -298,15 +298,15 @@ export function DashboardKpis({
           </div>
           <p className="mt-3 text-2xl font-bold tracking-tight text-[#1d1d1f]">
             R${' '}
-            {(isPeriodFiltered ? periodReceived : cashBalance).toLocaleString('pt-BR', {
+            {cashBalance.toLocaleString('pt-BR', {
               minimumFractionDigits: 2,
             })}
           </p>
           <div className="mt-2 flex items-center justify-between text-xs text-[#86868b]">
             <span>
               {isPeriodFiltered
-                ? `Saídas pagas: R$ ${periodPaid.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
-                : 'Recebido − Pago (Real)'}
+                ? `Entradas no mês: R$ ${periodReceived.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
+                : 'Disponível na conta para uso imediato'}
             </span>
             <span className="text-[#0071e3] font-medium group-hover:underline flex items-center gap-0.5">
               Extrato <ArrowRight size={11} />
@@ -314,14 +314,14 @@ export function DashboardKpis({
           </div>
         </Link>
 
-        {/* 2. Saldo Livre / Rendimento do Mês */}
+        {/* 2. Em Caixinhas / Rendimento do Mês */}
         <Link
-          href="/financeiro?tab=caixinhas"
+          href={isPeriodFiltered ? "/financeiro" : "#caixinhas"}
           className="group block rounded-2xl border border-[#e5e5ea] bg-white p-5 shadow-xs transition-all duration-150 hover:border-[#1a7f37]/50 hover:shadow-sm"
         >
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-[#1a7f37]">
-              {isPeriodFiltered ? 'Rendimento Mês' : 'Saldo Livre'}
+            <span className="text-xs font-semibold uppercase tracking-wider text-[#1d1d1f]">
+              {isPeriodFiltered ? 'Rendimento Mês' : 'Em Caixinhas'}
             </span>
             <span
               className={`rounded-md px-1.5 py-0.5 text-[10px] font-bold ${
@@ -333,7 +333,7 @@ export function DashboardKpis({
                     : periodPaid > 0
                     ? 'bg-[#feeceb] text-[#cf222e]'
                     : 'bg-[#f5f5f7] text-[#6e6e73]'
-                  : 'bg-[#e8f8ee] text-[#1a7f37]'
+                  : 'bg-[#f5f5f7] text-[#1d1d1f]'
               }`}
             >
               {isPeriodFiltered
@@ -342,24 +342,24 @@ export function DashboardKpis({
                   : periodPaid > 0
                   ? 'Despesas do mês'
                   : 'Sem movimentação'
-                : 'Disponível'}
+                : `${caixinhas.length} ativas`}
             </span>
           </div>
           <p
             className={`mt-3 text-2xl font-bold tracking-tight ${
-              (isPeriodFiltered ? periodProfit : freeCashBalance) >= 0
-                ? 'text-[#1a7f37]'
+              (isPeriodFiltered ? periodProfit : totalInCaixinhas) >= 0
+                ? isPeriodFiltered ? 'text-[#1a7f37]' : 'text-[#1d1d1f]'
                 : 'text-[#cf222e]'
             }`}
           >
             R${' '}
-            {(isPeriodFiltered ? periodProfit : freeCashBalance).toLocaleString('pt-BR', {
+            {(isPeriodFiltered ? periodProfit : totalInCaixinhas).toLocaleString('pt-BR', {
               minimumFractionDigits: 2,
             })}
           </p>
           <div className="mt-2 flex items-center justify-between text-xs text-[#86868b]">
             <span>
-              {isPeriodFiltered ? 'Resultado líquido do mês' : 'Livre de caixinhas'}
+              {isPeriodFiltered ? 'Resultado líquido do mês' : 'Reservas e metas separadas'}
             </span>
             <span className="text-[#1a7f37] font-medium group-hover:underline flex items-center gap-0.5">
               Ver mais <ArrowRight size={11} />
@@ -390,29 +390,36 @@ export function DashboardKpis({
           )}
         </Link>
 
-        {/* 3. Guardado em Caixinhas */}
-        <a
-          href="#caixinhas"
+        {/* 3. Patrimônio Total da Empresa / Guardado em Caixinhas no Mês */}
+        <Link
+          href="/financeiro?tab=caixinhas"
           className="group block rounded-2xl border border-[#e5e5ea] bg-white p-5 shadow-xs transition-all duration-150 hover:border-[#1d1d1f]/40 hover:shadow-sm"
         >
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold uppercase tracking-wider text-[#1d1d1f]">
-              Em Caixinhas
+              {isPeriodFiltered ? 'Guardado em Caixinhas' : 'Patrimônio Total'}
             </span>
-            <span className="rounded-md bg-[#f5f5f7] px-1.5 py-0.5 text-[10px] font-bold text-[#1d1d1f]">
-              {caixinhas.length} ativas
+            <span className="rounded-md bg-[#e8f8ee] px-1.5 py-0.5 text-[10px] font-bold text-[#1a7f37]">
+              {isPeriodFiltered ? `${caixinhas.length} ativas` : 'Conta + Caixas'}
             </span>
           </div>
           <p className="mt-3 text-2xl font-bold tracking-tight text-[#1d1d1f]">
-            R$ {totalInCaixinhas.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+            R${' '}
+            {(isPeriodFiltered ? totalInCaixinhas : cashBalance + totalInCaixinhas).toLocaleString('pt-BR', {
+              minimumFractionDigits: 2,
+            })}
           </p>
           <div className="mt-2 flex items-center justify-between text-xs text-[#86868b]">
-            <span>Metas e reservas</span>
+            <span>
+              {isPeriodFiltered
+                ? 'Reservas e metas ativas'
+                : `Conta (R$ ${cashBalance.toLocaleString('pt-BR', { minimumFractionDigits: 0 })}) + Caixinhas (R$ ${totalInCaixinhas.toLocaleString('pt-BR', { minimumFractionDigits: 0 })})`}
+            </span>
             <span className="text-[#1d1d1f] font-semibold group-hover:underline flex items-center gap-0.5">
-              Ver <ArrowRight size={11} />
+              Detalhes <ArrowRight size={11} />
             </span>
           </div>
-        </a>
+        </Link>
 
         {/* 4. A Receber */}
         <Link

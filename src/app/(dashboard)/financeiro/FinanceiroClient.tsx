@@ -72,10 +72,15 @@ export function FinanceiroClient({
 }) {
   const router = useRouter()
   const [localTransactions, setLocalTransactions] = useState<Transaction[]>(transactions)
+  const [localCaixinhas, setLocalCaixinhas] = useState<Caixinha[]>(caixinhas)
 
   useEffect(() => {
     setLocalTransactions(transactions)
   }, [transactions])
+
+  useEffect(() => {
+    setLocalCaixinhas(caixinhas)
+  }, [caixinhas])
 
   const [activeTab, setActiveTab] = useState<'extrato' | 'caixinhas'>(
     initialTab === 'caixinhas' ? 'caixinhas' : 'extrato'
@@ -98,11 +103,20 @@ export function FinanceiroClient({
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const { confirm, ConfirmDialog } = useConfirm()
 
-  // Estado para Ajustar Saldo Real Bancário
-  const [isAdjustModalOpen, setIsAdjustModalOpen] = useState(initialAction === 'ajustar-saldo')
+  // Estado para Ajustar Saldo Real Bancário (sempre inicia fechado para não abrir pop-up ao atualizar a página)
+  const [isAdjustModalOpen, setIsAdjustModalOpen] = useState(false)
   const [targetBalanceInput, setTargetBalanceInput] = useState('')
   const [adjustNotes, setAdjustNotes] = useState('')
   const [adjustError, setAdjustError] = useState<string | null>(null)
+
+  // Limpa qualquer parâmetro action da URL para que atualizações de página (F5) não reabram pop-ups indesejados
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.location.search.includes('action=')) {
+      const url = new URL(window.location.href)
+      url.searchParams.delete('action')
+      window.history.replaceState({}, '', url.pathname + (url.search ? url.search : ''))
+    }
+  }, [])
 
   // Meses e Anos para Filtros de Período
   const MONTH_NAMES = [
@@ -235,8 +249,9 @@ export function FinanceiroClient({
     .reduce((acc, t) => acc + Number(t.amount || 0), 0)
 
   const cashBalance = totalReceived - totalPaid
-  const totalInCaixinhas = (caixinhas || []).reduce((acc, c) => acc + Number(c.current_balance || 0), 0)
-  const freeCashBalance = Math.max(0, cashBalance - totalInCaixinhas)
+  const totalInCaixinhas = (localCaixinhas || []).reduce((acc, c) => acc + Number(c.current_balance || 0), 0)
+  // O saldo em conta bancária (cashBalance) já é o saldo livre, pois as caixinhas já foram retiradas
+  const freeCashBalance = cashBalance
 
   const pendingIncomeAll = localTransactions
     .filter((t) => t.type === 'income' && t.status === 'pending')
@@ -302,6 +317,16 @@ export function FinanceiroClient({
     })
   }
 
+  const closeAdjustModal = () => {
+    setIsAdjustModalOpen(false)
+    setAdjustError(null)
+    if (typeof window !== 'undefined' && window.location.search.includes('action=')) {
+      const url = new URL(window.location.href)
+      url.searchParams.delete('action')
+      window.history.replaceState({}, '', url.pathname + (url.search ? url.search : ''))
+    }
+  }
+
   const handleAdjustSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     setAdjustError(null)
@@ -313,7 +338,7 @@ export function FinanceiroClient({
       if (res?.error) {
         setAdjustError(res.error)
       } else {
-        setIsAdjustModalOpen(false)
+        closeAdjustModal()
         router.refresh()
       }
     })
@@ -362,14 +387,14 @@ export function FinanceiroClient({
           <button
             onClick={() => {
               setAdjustError(null)
-              setTargetBalanceInput(cashBalance !== 0 ? String(cashBalance) : '')
+              setTargetBalanceInput(freeCashBalance !== 0 ? String(freeCashBalance) : '')
               setAdjustNotes('')
               setIsAdjustModalOpen(true)
             }}
             className="flex items-center space-x-1.5 rounded-xl bg-white px-3.5 py-2 text-xs font-semibold text-[#1d1d1f] hover:bg-[#f5f5f7] transition-all border border-[#d2d2d7] cursor-pointer shadow-2xs"
           >
             <Landmark size={15} className="text-[#0071e3]" />
-            <span>Ajustar Saldo Bancário</span>
+            <span>Ajustar Saldo da Conta</span>
           </button>
           <button
             onClick={() => {
@@ -490,12 +515,12 @@ export function FinanceiroClient({
 
       {/* Summary Cards Consolidados (Dinâmicos por Mês) */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
-        {/* 1. Saldo em Caixa / Entradas Pagas no Mês */}
+        {/* 1. Saldo em Caixa (Livre) */}
         <div className="rounded-2xl border border-[#e5e5ea] bg-white p-5 shadow-xs flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between">
               <span className="text-xs font-semibold uppercase tracking-wider text-[#6e6e73]">
-                {isPeriodFiltered ? 'Entradas Pagas no Mês' : 'Saldo em Caixa (Real)'}
+                Saldo em Caixa (Livre)
               </span>
               <div className="rounded-xl bg-[#e8f8ee] p-1.5 text-[#1a7f37]">
                 <Wallet size={16} />
@@ -503,18 +528,18 @@ export function FinanceiroClient({
             </div>
             <p
               className={`mt-2 text-2xl font-bold tracking-tight ${
-                (isPeriodFiltered ? periodReceived : cashBalance) >= 0 ? 'text-[#1d1d1f]' : 'text-[#cf222e]'
+                cashBalance >= 0 ? 'text-[#1d1d1f]' : 'text-[#cf222e]'
               }`}
             >
               R${' '}
-              {(isPeriodFiltered ? periodReceived : cashBalance).toLocaleString('pt-BR', {
+              {cashBalance.toLocaleString('pt-BR', {
                 minimumFractionDigits: 2,
               })}
             </p>
             <span className="mt-1 block text-xs text-[#86868b]">
               {isPeriodFiltered
-                ? `Saídas pagas no mês: R$ ${periodPaid.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
-                : `Recebido (${totalReceived.toLocaleString('pt-BR', { minimumFractionDigits: 0 })}) − Pago (${totalPaid.toLocaleString('pt-BR', { minimumFractionDigits: 0 })})`}
+                ? `Entradas pagas no mês: R$ ${periodReceived.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
+                : 'Disponível na conta para uso imediato'}
             </span>
           </div>
 
@@ -531,17 +556,20 @@ export function FinanceiroClient({
               title="Ajustar saldo para conciliar com o extrato real da conta bancária"
             >
               <Landmark size={13} />
-              <span>Ajustar Saldo Real</span>
+              <span>Ajustar Saldo da Conta</span>
             </button>
           </div>
         </div>
 
-        {/* 2. Saldo Livre / Rendimento do Mês */}
-        <div className="rounded-2xl border border-[#e5e5ea] bg-white p-5 shadow-xs flex flex-col justify-between">
+        {/* 2. Em Caixinhas / Rendimento do Mês */}
+        <div
+          onClick={() => setActiveTab('caixinhas')}
+          className="rounded-2xl border border-[#e5e5ea] bg-white p-5 shadow-xs hover:border-[#1d1d1f]/40 cursor-pointer transition-all flex flex-col justify-between"
+        >
           <div>
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold uppercase tracking-wider text-[#1a7f37]">
-                {isPeriodFiltered ? 'Rendimento do Mês' : 'Saldo Livre'}
+              <span className="text-xs font-semibold uppercase tracking-wider text-[#1d1d1f]">
+                {isPeriodFiltered ? 'Rendimento do Mês' : 'Em Caixinhas'}
               </span>
               <span
                 className={`rounded-md px-1.5 py-0.5 text-[10px] font-bold ${
@@ -549,34 +577,36 @@ export function FinanceiroClient({
                     ? periodProfit >= 0
                       ? 'bg-[#e8f8ee] text-[#1a7f37]'
                       : 'bg-[#feeceb] text-[#cf222e]'
-                    : 'bg-[#e8f8ee] text-[#1a7f37]'
+                    : 'bg-[#f5f5f7] text-[#1d1d1f]'
                 }`}
               >
                 {isPeriodFiltered
                   ? `${periodProfit >= 0 ? '+' : ''}${periodProfitMargin.toFixed(1)}% de lucro`
-                  : 'Disponível'}
+                  : `${localCaixinhas.length} ativas`}
               </span>
             </div>
             <p
               className={`mt-2 text-2xl font-bold tracking-tight ${
-                (isPeriodFiltered ? periodProfit : freeCashBalance) >= 0
-                  ? 'text-[#1a7f37]'
-                  : 'text-[#cf222e]'
+                isPeriodFiltered
+                  ? periodProfit >= 0
+                    ? 'text-[#1a7f37]'
+                    : 'text-[#cf222e]'
+                  : 'text-[#1d1d1f]'
               }`}
             >
               R${' '}
-              {(isPeriodFiltered ? periodProfit : freeCashBalance).toLocaleString('pt-BR', {
+              {(isPeriodFiltered ? periodProfit : totalInCaixinhas).toLocaleString('pt-BR', {
                 minimumFractionDigits: 2,
               })}
             </p>
             <span className="mt-1 block text-xs text-[#86868b]">
               {isPeriodFiltered
                 ? `Lucro líquido realizado no período`
-                : 'Saldo em Caixa − Caixinhas'}
+                : 'Reservas financeiras separadas →'}
             </span>
           </div>
 
-          {isPeriodFiltered && (
+          {isPeriodFiltered ? (
             <div className="mt-3 pt-2.5 border-t border-[#f2f2f7] flex flex-col gap-1 text-[11px] text-[#6e6e73]">
               <div className="flex items-center justify-between">
                 <span>Margem Atual:</span>
@@ -589,31 +619,39 @@ export function FinanceiroClient({
                 <strong>{periodProjectedProfitMargin.toFixed(1)}%</strong>
               </div>
             </div>
+          ) : (
+            <div className="mt-3 pt-2.5 border-t border-[#f2f2f7] flex items-center justify-between text-xs text-[#0071e3] font-semibold">
+              <span>Ver caixinhas</span>
+              <ArrowRight size={12} />
+            </div>
           )}
         </div>
 
-        {/* 3. Em Caixinhas */}
-        <div
-          onClick={() => setActiveTab('caixinhas')}
-          className="rounded-2xl border border-[#e5e5ea] bg-white p-5 shadow-xs hover:border-[#1d1d1f]/40 cursor-pointer transition-all flex flex-col justify-between"
-        >
+        {/* 3. Patrimônio Total da Empresa / Guardado em Caixinhas no Mês */}
+        <div className="rounded-2xl border border-[#e5e5ea] bg-white p-5 shadow-xs flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between">
               <span className="text-xs font-semibold uppercase tracking-wider text-[#1d1d1f]">
-                Em Caixinhas
+                {isPeriodFiltered ? 'Guardado em Caixinhas' : 'Patrimônio Total'}
               </span>
-              <span className="rounded-md bg-[#f5f5f7] px-1.5 py-0.5 text-[10px] font-bold text-[#1d1d1f]">
-                {caixinhas.length} ativas
+              <span className="rounded-md bg-[#e8f8ee] px-1.5 py-0.5 text-[10px] font-bold text-[#1a7f37]">
+                {isPeriodFiltered ? `${localCaixinhas.length} ativas` : 'Conta + Caixas'}
               </span>
             </div>
             <p className="mt-2 text-2xl font-bold tracking-tight text-[#1d1d1f]">
-              R$ {totalInCaixinhas.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+              R${' '}
+              {(isPeriodFiltered ? totalInCaixinhas : cashBalance + totalInCaixinhas).toLocaleString('pt-BR', {
+                minimumFractionDigits: 2,
+              })}
             </p>
-            <span className="mt-1 block text-xs text-[#86868b]">Reservas separadas →</span>
+            <span className="mt-1 block text-xs text-[#86868b]">
+              {isPeriodFiltered
+                ? 'Reservas e metas ativas'
+                : `Conta (R$ ${cashBalance.toLocaleString('pt-BR', { minimumFractionDigits: 0 })}) + Caixinhas (R$ ${totalInCaixinhas.toLocaleString('pt-BR', { minimumFractionDigits: 0 })})`}
+            </span>
           </div>
-          <div className="mt-3 pt-2.5 border-t border-[#f2f2f7] flex items-center justify-between text-xs text-[#0071e3] font-semibold">
-            <span>Ver caixinhas</span>
-            <ArrowRight size={12} />
+          <div className="mt-3 pt-2.5 border-t border-[#f2f2f7] text-[11px] text-[#86868b]">
+            <span>{isPeriodFiltered ? 'Total guardado' : 'Total acumulado da empresa'}</span>
           </div>
         </div>
 
@@ -710,15 +748,16 @@ export function FinanceiroClient({
           }`}
         >
           <Wallet size={14} />
-          <span>Caixinhas ({caixinhas.length})</span>
+          <span>Caixinhas ({localCaixinhas.length})</span>
         </button>
       </div>
 
       {/* Conteúdo Dinâmico por Aba */}
       {activeTab === 'caixinhas' ? (
         <CaixinhasFinanceiras
-          initialCaixinhas={caixinhas}
+          initialCaixinhas={localCaixinhas}
           totalCashBalance={totalReceived - totalPaid}
+          onCaixinhasChange={setLocalCaixinhas}
         />
       ) : (
         /* Transactions Table Section */
@@ -1137,7 +1176,7 @@ export function FinanceiroClient({
               </div>
               <button
                 type="button"
-                onClick={() => setIsAdjustModalOpen(false)}
+                onClick={closeAdjustModal}
                 className="rounded-lg p-1 text-[#86868b] hover:bg-[#f5f5f7] hover:text-[#1d1d1f] transition-colors cursor-pointer"
               >
                 <X size={18} />
@@ -1152,15 +1191,27 @@ export function FinanceiroClient({
 
             <form onSubmit={handleAdjustSubmit} className="space-y-4 mt-4">
               {/* Card Comparativo */}
-              <div className="p-3.5 rounded-xl bg-[#f5f5f7] border border-[#e5e5ea] text-xs space-y-1.5">
+              <div className="p-3.5 rounded-xl bg-[#f5f5f7] border border-[#e5e5ea] text-xs space-y-2">
                 <div className="flex justify-between items-center">
-                  <span className="text-[#6e6e73]">Saldo atual registrado no sistema:</span>
-                  <strong className="text-[#1d1d1f] font-mono text-sm">
+                  <span className="text-[#6e6e73]">Saldo atual na Conta (Livre):</span>
+                  <strong className="text-[#1a7f37] font-mono text-sm">
                     R$ {cashBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                   </strong>
                 </div>
+                <div className="flex justify-between items-center text-[#86868b] text-[11px]">
+                  <span>Guardado em Caixinhas:</span>
+                  <span className="font-mono">
+                    R$ {totalInCaixinhas.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center text-[#86868b] text-[11px] pt-1 border-t border-[#e5e5ea]">
+                  <span>Patrimônio Total da Empresa:</span>
+                  <span className="font-mono font-semibold text-[#1d1d1f]">
+                    R$ {(cashBalance + totalInCaixinhas).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                  </span>
+                </div>
                 <p className="text-[11px] text-[#86868b] leading-relaxed pt-1 border-t border-[#e5e5ea]">
-                  💡 <strong>Por que usar?</strong> Se antes do sistema o financeiro estava desorganizado ou valores foram gastos sem lançamento, basta informar o saldo real da sua conta bancária para alinhar tudo automaticamente.
+                  💡 <strong>Como funciona:</strong> Digite o saldo que aparece hoje no aplicativo do seu banco (conta corrente). O sistema ajustará para igualar ao banco.
                 </p>
               </div>
 
@@ -1205,7 +1256,7 @@ export function FinanceiroClient({
                         <>
                           📈 <strong>Aumento de Saldo:</strong> Será registrado um ajuste de entrada de{' '}
                           <strong>R$ {diff.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong>{' '}
-                          (Saldo Inicial/Aporte) para igualar ao banco.
+                          (Saldo Inicial/Aporte) para igualar o saldo da conta ao banco.
                         </>
                       ) : diff < 0 ? (
                         <>
@@ -1215,7 +1266,7 @@ export function FinanceiroClient({
                         </>
                       ) : (
                         <>
-                          ✅ O saldo já está exatamente no mesmo valor do banco (R${' '}
+                          ✅ O saldo da conta já está exatamente no mesmo valor do banco (R${' '}
                           {targetNum.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}).
                         </>
                       )}
@@ -1241,7 +1292,7 @@ export function FinanceiroClient({
               <div className="flex justify-end gap-2.5 pt-4 border-t border-[#f2f2f7]">
                 <button
                   type="button"
-                  onClick={() => setIsAdjustModalOpen(false)}
+                  onClick={closeAdjustModal}
                   className="px-4 py-2 text-xs font-semibold text-[#6e6e73] hover:text-[#1d1d1f] transition-colors cursor-pointer"
                 >
                   Cancelar

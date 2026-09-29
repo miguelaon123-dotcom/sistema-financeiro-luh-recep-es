@@ -4,6 +4,7 @@ import { createAdminClient } from '@/lib/supabase/server'
 import { headers } from 'next/headers'
 import { revalidatePath } from 'next/cache'
 import { invalidateCache } from '@/lib/data-cache'
+import { getCaixinhas } from '../caixinhas/actions'
 
 export async function createTransaction(formData: FormData) {
   const headersList = await headers()
@@ -165,11 +166,14 @@ export async function adjustCashBalance(formData: FormData) {
     return { error: 'Informe um valor de saldo válido.' }
   }
 
-  // 1. Obter saldo em caixa real atual das transações pagas
-  const { data: txs, error: fetchErr } = await supabase
-    .from('financial_transactions')
-    .select('amount, type, status')
-    .eq('status', 'paid')
+  // 1. Obter saldo em caixa real atual das transações pagas e caixinhas
+  const [{ data: txs, error: fetchErr }, caixinhas] = await Promise.all([
+    supabase
+      .from('financial_transactions')
+      .select('amount, type, status')
+      .eq('status', 'paid'),
+    getCaixinhas(),
+  ])
 
   if (fetchErr) {
     return { error: fetchErr.message }
@@ -179,17 +183,22 @@ export async function adjustCashBalance(formData: FormData) {
     return t.type === 'income' ? acc + Number(t.amount || 0) : acc - Number(t.amount || 0)
   }, 0)
 
+  const totalInCaixinhas = (caixinhas || []).reduce(
+    (acc, c) => acc + Number(c.current_balance || 0),
+    0
+  )
+
   const diff = Number((targetBalance - currentCash).toFixed(2))
 
   if (diff === 0) {
-    return { success: true, message: 'O saldo já está exatamente no valor informado.' }
+    return { success: true, message: 'O saldo da conta já está exatamente no valor informado.' }
   }
 
   const type = diff > 0 ? 'income' : 'expense'
   const amount = Math.abs(diff)
   const defaultDesc =
     diff > 0
-      ? 'Saldo Inicial / Abertura de Conta Bancária'
+      ? 'Aporte / Saldo Inicial em Conta'
       : 'Ajuste de Saldo Bancário / Gastos anteriores'
   const description =
     customNotes ||

@@ -35,6 +35,7 @@ import {
   updateSupplier,
   deleteSupplier,
   createSupplierExpense,
+  updateSupplierExpense,
   paySupplierExpense,
   deleteSupplierExpense,
 } from './actions'
@@ -51,6 +52,33 @@ interface Supplier {
   notes?: string | null
   created_at?: string
 }
+
+export interface BillItem {
+  id: string
+  name: string
+  quantity: string
+  unit: string
+  unit_price: string
+  customUnit?: string
+}
+
+export const COMMON_UNITS = [
+  { value: 'cx', label: 'cx (Caixa)' },
+  { value: 'un', label: 'un (Unidade)' },
+  { value: 'fd', label: 'fd (Fardo)' },
+  { value: 'kg', label: 'kg (Quilo)' },
+  { value: 'pct', label: 'pct (Pacote)' },
+  { value: 'lt', label: 'lt (Litro)' },
+  { value: 'sc', label: 'sc (Saco)' },
+  { value: 'dz', label: 'dz (Dúzia)' },
+  { value: 'gfa', label: 'gfa (Garrafa)' },
+  { value: 'lata', label: 'lata (Lata)' },
+  { value: 'gl', label: 'gl (Galão)' },
+  { value: 'pç', label: 'pç (Peça)' },
+  { value: 'm', label: 'm (Metro)' },
+  { value: 'par', label: 'par (Par)' },
+  { value: 'outro', label: 'Outro...' },
+]
 
 interface SupplierTransaction {
   id: string
@@ -105,8 +133,140 @@ export function FornecedoresClient({
   const [supplierModalOpen, setSupplierModalOpen] = useState(initialAction === 'novo-fornecedor')
   const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null)
   const [billModalOpen, setBillModalOpen] = useState(initialAction === 'nova-conta')
+  const [editingBill, setEditingBill] = useState<SupplierTransaction | null>(null)
   const [selectedSupplierForBill, setSelectedSupplierForBill] = useState<string>('')
   const [billInitialStatus, setBillInitialStatus] = useState<'pending' | 'paid'>('pending')
+
+  // Estado dos Itens / Produtos da Conta (Boleto)
+  const [billItems, setBillItems] = useState<BillItem[]>([
+    { id: '1', name: '', quantity: '1', unit: 'cx', unit_price: '', customUnit: '' },
+  ])
+  const [billGeneralDescription, setBillGeneralDescription] = useState('')
+  const [billTotalAmount, setBillTotalAmount] = useState('')
+
+  const handleAddBillItem = () => {
+    setBillItems((prev) => [
+      ...prev,
+      {
+        id: crypto.randomUUID(),
+        name: '',
+        quantity: '1',
+        unit: 'cx',
+        unit_price: '',
+        customUnit: '',
+      },
+    ])
+  }
+
+  const handleRemoveBillItem = (id: string) => {
+    if (billItems.length <= 1) return
+    setBillItems((prev) => prev.filter((item) => item.id !== id))
+  }
+
+  const handleUpdateBillItem = (id: string, field: keyof BillItem, value: string) => {
+    setBillItems((prev) =>
+      prev.map((item) => {
+        if (item.id !== id) return item
+        return { ...item, [field]: value }
+      })
+    )
+  }
+
+  const calculatedItemsTotal = useMemo(() => {
+    return billItems.reduce((acc, item) => {
+      const q = parseFloat(item.quantity.replace(',', '.')) || 0
+      const p = parseFloat(item.unit_price.replace(',', '.')) || 0
+      return acc + q * p
+    }, 0)
+  }, [billItems])
+
+  // Sincroniza automaticamente o total quando houver itens calculados
+  useEffect(() => {
+    if (calculatedItemsTotal > 0) {
+      setBillTotalAmount(calculatedItemsTotal.toFixed(2))
+    }
+  }, [calculatedItemsTotal])
+
+  const resetBillForm = (supplierId = '') => {
+    setEditingBill(null)
+    setSelectedSupplierForBill(supplierId)
+    setBillItems([
+      { id: crypto.randomUUID(), name: '', quantity: '1', unit: 'cx', unit_price: '', customUnit: '' },
+    ])
+    setBillGeneralDescription('')
+    setBillTotalAmount('')
+    setBillInitialStatus('pending')
+  }
+
+  const handleEditBill = (tx: SupplierTransaction) => {
+    setErrorMessage(null)
+    setEditingBill(tx)
+    setSelectedSupplierForBill(tx.contact_id || '')
+    setBillInitialStatus(tx.status === 'paid' ? 'paid' : 'pending')
+    setBillTotalAmount(Number(tx.amount).toFixed(2))
+
+    let desc = tx.description || ''
+    let generalDesc = ''
+
+    // Tentar separar título geral caso exista (ex: "Título Geral: 10 cx - Heineken")
+    const colonIdx = desc.indexOf(': ')
+    if (colonIdx !== -1) {
+      const prefix = desc.substring(0, colonIdx).trim()
+      const remainder = desc.substring(colonIdx + 2).trim()
+      if (remainder.includes(' - ') || remainder.includes(' • ')) {
+        generalDesc = prefix
+        desc = remainder
+      }
+    }
+
+    setBillGeneralDescription(generalDesc)
+
+    const parts = desc.includes(' • ') ? desc.split(' • ') : [desc]
+    const parsedItems: BillItem[] = []
+    const itemRegex = /^(\d+(?:[.,]\d+)?)\s+([a-zA-ZÀ-ÿ]+)\s*-\s*(.*?)(?:\s*\((?:R\$\s*)?([\d.,]+)(?:\/[^)]+)?\))?$/i
+
+    for (const part of parts) {
+      const trimmed = part.trim()
+      if (!trimmed) continue
+      const match = trimmed.match(itemRegex)
+      if (match) {
+        const qty = match[1]
+        const rawUnit = match[2].toLowerCase()
+        const isKnown = COMMON_UNITS.some((u) => u.value === rawUnit)
+        parsedItems.push({
+          id: crypto.randomUUID(),
+          name: match[3].trim(),
+          quantity: qty,
+          unit: isKnown ? rawUnit : 'outro',
+          customUnit: isKnown ? '' : match[2],
+          unit_price: match[4] || '',
+        })
+      } else {
+        parsedItems.push({
+          id: crypto.randomUUID(),
+          name: trimmed,
+          quantity: '1',
+          unit: 'un',
+          unit_price: '',
+          customUnit: '',
+        })
+      }
+    }
+
+    if (parsedItems.length === 0) {
+      parsedItems.push({
+        id: crypto.randomUUID(),
+        name: tx.description || '',
+        quantity: '1',
+        unit: 'un',
+        unit_price: Number(tx.amount).toFixed(2),
+        customUnit: '',
+      })
+    }
+
+    setBillItems(parsedItems)
+    setBillModalOpen(true)
+  }
 
   const [isPending, startTransition] = useTransition()
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null)
@@ -398,14 +558,70 @@ export function FornecedoresClient({
     setErrorMessage(null)
     const formData = new FormData(e.currentTarget)
 
+    // Montar descrição com itens detalhados (quantidade, unidade, nome e valor unitário)
+    const validItems = billItems.filter((i) => i.name.trim() !== '')
+
+    let finalDescription = billGeneralDescription.trim()
+
+    if (validItems.length > 0) {
+      const formattedItems = validItems.map((item) => {
+        const u = item.unit === 'outro' && item.customUnit ? item.customUnit.trim() : item.unit
+        const q = item.quantity.trim() || '1'
+        const unitPriceNum = parseFloat(item.unit_price.replace(',', '.'))
+        const priceInfo =
+          !isNaN(unitPriceNum) && unitPriceNum > 0
+            ? ` (R$ ${unitPriceNum.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}/${u})`
+            : ''
+        return `${q} ${u} - ${item.name.trim()}${priceInfo}`
+      })
+
+      const itemsSummary = formattedItems.join(' • ')
+      if (finalDescription) {
+        finalDescription = `${finalDescription}: ${itemsSummary}`
+      } else {
+        finalDescription = itemsSummary
+      }
+    }
+
+    if (!finalDescription) {
+      setErrorMessage('Informe a descrição do boleto ou adicione ao menos um produto/item.')
+      return
+    }
+
+    // Determinar valor total: se o input manual tiver valor válido usa ele, senão usa a soma calculada dos itens
+    const manualAmount = parseFloat(billTotalAmount.replace(',', '.'))
+    const finalAmount = !isNaN(manualAmount) && manualAmount > 0 ? manualAmount : calculatedItemsTotal
+
+    if (!finalAmount || finalAmount <= 0) {
+      setErrorMessage('Informe o valor a pagar do boleto ou o preço dos itens adicionados.')
+      return
+    }
+
+    formData.set('description', finalDescription)
+    formData.set('amount', finalAmount.toString())
+    if (validItems.length > 0) {
+      formData.set('items_json', JSON.stringify(validItems))
+    }
+
+    if (editingBill) {
+      formData.set('id', editingBill.id)
+    }
+
     startTransition(async () => {
-      const res = await createSupplierExpense(formData)
+      const res = editingBill
+        ? await updateSupplierExpense(formData)
+        : await createSupplierExpense(formData)
+
       if (res?.error) {
         setErrorMessage(res.error)
       } else {
         setBillModalOpen(false)
-        setSelectedSupplierForBill('')
-        setSuccessMessage('Conta/Boleto de fornecedor lançado com sucesso!')
+        resetBillForm('')
+        setSuccessMessage(
+          editingBill
+            ? 'Conta/Boleto atualizado com sucesso!'
+            : 'Conta/Boleto de fornecedor lançado com sucesso!'
+        )
         setTimeout(() => setSuccessMessage(null), 3000)
         router.refresh()
       }
@@ -460,7 +676,7 @@ export function FornecedoresClient({
           <button
             onClick={() => {
               setErrorMessage(null)
-              setSelectedSupplierForBill('')
+              resetBillForm('')
               setBillModalOpen(true)
             }}
             className="flex items-center space-x-1.5 rounded-xl bg-[#1d1d1f] px-3.5 py-2 text-xs font-semibold text-white hover:bg-black transition-all shadow-xs active:scale-[0.98] cursor-pointer"
@@ -983,10 +1199,22 @@ export function FornecedoresClient({
                           </td>
 
                           <td className="px-5 py-3.5 text-[#1d1d1f]">
-                            <div>
-                              <span>{tx.description}</span>
+                            <div className="space-y-1">
+                              {tx.description.includes(' • ') ? (
+                                <div className="flex flex-col gap-1 max-w-sm">
+                                  {tx.description.split(' • ').map((part: string, idx: number) => (
+                                    <div key={idx} className="flex items-center gap-1.5">
+                                      <span className="inline-flex items-center rounded-md bg-[#f5f5f7] border border-[#e5e5ea] px-2 py-0.5 text-[11px] font-medium text-[#1d1d1f]">
+                                        📦 {part}
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : (
+                                <span className="font-medium">{tx.description}</span>
+                              )}
                               {tx.events?.title && (
-                                <span className="block text-[11px] text-[#0071e3]">
+                                <span className="inline-block mt-0.5 text-[11px] font-semibold text-[#0071e3] bg-[#eef5fc] px-2 py-0.5 rounded-md">
                                   Festa: {tx.events.title}
                                 </span>
                               )}
@@ -1052,12 +1280,21 @@ export function FornecedoresClient({
                               )}
 
                               <button
+                                onClick={() => handleEditBill(tx)}
+                                disabled={actionLoadingId === tx.id}
+                                className="rounded-lg p-1.5 text-[#86868b] hover:bg-[#f5f5f7] hover:text-[#1d1d1f] transition-colors cursor-pointer"
+                                title="Editar boleto / despesa"
+                              >
+                                <Pencil size={14} />
+                              </button>
+
+                              <button
                                 onClick={() => handleDeleteBill(tx.id, tx.description)}
                                 disabled={actionLoadingId === tx.id}
-                                className="rounded-lg p-1 text-[#86868b] hover:bg-[#feeceb] hover:text-[#ff3b30] transition-colors cursor-pointer"
+                                className="rounded-lg p-1.5 text-[#86868b] hover:bg-[#feeceb] hover:text-[#ff3b30] transition-colors cursor-pointer"
                                 title="Excluir lançamento"
                               >
-                                <Trash2 size={15} />
+                                <Trash2 size={14} />
                               </button>
                             </div>
                           </td>
@@ -1078,7 +1315,7 @@ export function FornecedoresClient({
                             <button
                               onClick={() => {
                                 setErrorMessage(null)
-                                setSelectedSupplierForBill(supplierFilter)
+                                resetBillForm(supplierFilter)
                                 setBillModalOpen(true)
                               }}
                               className="mt-2 inline-flex items-center gap-1.5 rounded-xl bg-[#1d1d1f] hover:bg-black text-white px-3.5 py-1.5 text-xs font-semibold shadow-xs cursor-pointer"
@@ -1283,7 +1520,7 @@ export function FornecedoresClient({
                         <button
                           onClick={() => {
                             setErrorMessage(null)
-                            setSelectedSupplierForBill(s.id)
+                            resetBillForm(s.id)
                             setBillModalOpen(true)
                           }}
                           className="flex-1 flex items-center justify-center gap-1.5 rounded-xl bg-[#1d1d1f] hover:bg-black py-2.5 text-xs font-bold text-white transition-all shadow-xs cursor-pointer"
@@ -1448,26 +1685,32 @@ export function FornecedoresClient({
         </div>
       )}
 
-      {/* MODAL 2: LANÇAR CONTA / BOLETO A PAGAR */}
+      {/* MODAL 2: LANÇAR CONTA / BOLETO A PAGAR (COM MÚLTIPLOS ITENS E UNIDADES) */}
       {billModalOpen && (
         <div className="fixed inset-0 z-50 overflow-y-auto flex min-h-full items-center justify-center bg-black/40 backdrop-blur-xs p-3 sm:p-4 animate-in fade-in duration-150">
-          <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl border border-[#e5e5ea] animate-in zoom-in-95 duration-150">
-            <div className="flex items-center justify-between pb-4 border-b border-[#f2f2f7]">
-              <div className="flex items-center gap-2">
-                <div className="rounded-xl bg-[#feeceb] p-2 text-[#cf222e]">
-                  <DollarSign size={20} />
+          <div className="w-full max-w-2xl rounded-3xl bg-white p-6 shadow-2xl border border-[#e5e5ea] animate-in zoom-in-95 duration-150 my-6 max-h-[90vh] flex flex-col">
+            {/* Header do Modal */}
+            <div className="flex items-center justify-between pb-4 border-b border-[#f2f2f7] shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="rounded-2xl bg-[#feeceb] p-2.5 text-[#cf222e]">
+                  <DollarSign size={22} />
                 </div>
                 <div>
-                  <h3 className="text-lg font-bold text-[#1d1d1f]">Lançar Conta / Boleto</h3>
+                  <h3 className="text-lg font-bold text-[#1d1d1f]">
+                    {editingBill ? 'Editar Conta / Boleto' : 'Lançar Conta / Boleto'}
+                  </h3>
                   <p className="text-xs text-[#6e6e73]">
-                    Registre uma despesa ou nota fiscal a pagar ao fornecedor.
+                    {editingBill
+                      ? 'Altere produtos, quantidades, unidades, fornecedor ou vencimento.'
+                      : 'Cadastre despesas com múltiplos produtos, insumos e unidades de medida.'}
                   </p>
                 </div>
               </div>
               <button
+                type="button"
                 onClick={() => {
                   setBillModalOpen(false)
-                  setSelectedSupplierForBill('')
+                  resetBillForm('')
                 }}
                 className="rounded-xl p-1.5 text-[#86868b] hover:bg-[#f5f5f7] hover:text-[#1d1d1f] transition-colors cursor-pointer"
               >
@@ -1476,58 +1719,39 @@ export function FornecedoresClient({
             </div>
 
             {errorMessage && (
-              <div className="mt-4 rounded-xl border border-[#feeceb] bg-[#fff5f5] p-3 text-xs text-[#cf222e]">
+              <div className="mt-4 rounded-xl border border-[#feeceb] bg-[#fff5f5] p-3 text-xs text-[#cf222e] shrink-0">
                 {errorMessage}
               </div>
             )}
 
-            <form onSubmit={handleSaveBill} className="mt-4 space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-[#1d1d1f] mb-1">
-                  Fornecedor *
-                </label>
-                <select
-                  name="supplier_id"
-                  required
-                  defaultValue={selectedSupplierForBill}
-                  className="w-full rounded-xl border border-[#d1d1d6] bg-white px-3.5 py-2 text-sm text-[#1d1d1f] focus:border-[#1d1d1f] focus:outline-none focus:ring-1 focus:ring-[#1d1d1f] transition-all"
-                >
-                  <option value="">Selecione o fornecedor...</option>
-                  {localSuppliers.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+            {/* Conteúdo rolável */}
+            <form
+              key={editingBill ? editingBill.id : 'new-bill'}
+              onSubmit={handleSaveBill}
+              className="mt-4 flex-1 overflow-y-auto pr-1 space-y-4"
+            >
+              {editingBill && <input type="hidden" name="id" value={editingBill.id} />}
 
-              <div>
-                <label className="block text-xs font-semibold text-[#1d1d1f] mb-1">
-                  Descrição da Conta / Boleto / Insumo *
-                </label>
-                <input
-                  type="text"
-                  name="description"
-                  required
-                  placeholder="Ex: Compra de 50 caixas de cerveja e refrigerante"
-                  className="w-full rounded-xl border border-[#d1d1d6] bg-white px-3.5 py-2 text-sm text-[#1d1d1f] placeholder-[#86868b] focus:border-[#1d1d1f] focus:outline-none focus:ring-1 focus:ring-[#1d1d1f] transition-all"
-                />
-              </div>
-
+              {/* Fornecedor e Vencimento */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-[#1d1d1f] mb-1">
-                    Valor a Pagar (R$) *
+                    Fornecedor *
                   </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0.01"
-                    name="amount"
+                  <select
+                    name="supplier_id"
                     required
-                    placeholder="0,00"
-                    className="w-full rounded-xl border border-[#d1d1d6] bg-white px-3.5 py-2 text-sm text-[#1d1d1f] placeholder-[#86868b] focus:border-[#1d1d1f] focus:outline-none focus:ring-1 focus:ring-[#1d1d1f] transition-all"
-                  />
+                    value={selectedSupplierForBill}
+                    onChange={(e) => setSelectedSupplierForBill(e.target.value)}
+                    className="w-full rounded-xl border border-[#d1d1d6] bg-white px-3.5 py-2 text-xs sm:text-sm text-[#1d1d1f] focus:border-[#1d1d1f] focus:outline-none focus:ring-1 focus:ring-[#1d1d1f] transition-all"
+                  >
+                    <option value="">Selecione o fornecedor...</option>
+                    {localSuppliers.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name}
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
                 <div>
@@ -1538,21 +1762,23 @@ export function FornecedoresClient({
                     type="date"
                     name="due_date"
                     required
-                    defaultValue={new Date().toISOString().split('T')[0]}
-                    className="w-full rounded-xl border border-[#d1d1d6] bg-white px-3.5 py-2 text-sm text-[#1d1d1f] focus:border-[#1d1d1f] focus:outline-none focus:ring-1 focus:ring-[#1d1d1f] transition-all"
+                    defaultValue={editingBill ? editingBill.due_date : new Date().toISOString().split('T')[0]}
+                    className="w-full rounded-xl border border-[#d1d1d6] bg-white px-3.5 py-2 text-xs sm:text-sm text-[#1d1d1f] focus:border-[#1d1d1f] focus:outline-none focus:ring-1 focus:ring-[#1d1d1f] transition-all"
                   />
                 </div>
               </div>
 
+              {/* Vincular Evento */}
               <div>
                 <label className="block text-xs font-semibold text-[#1d1d1f] mb-1">
                   Vincular a Evento / Festa (Opcional)
                 </label>
                 <select
                   name="event_id"
-                  className="w-full rounded-xl border border-[#d1d1d6] bg-white px-3.5 py-2 text-sm text-[#1d1d1f] focus:border-[#1d1d1f] focus:outline-none focus:ring-1 focus:ring-[#1d1d1f] transition-all"
+                  defaultValue={editingBill?.event_id || ''}
+                  className="w-full rounded-xl border border-[#d1d1d6] bg-white px-3.5 py-2 text-xs sm:text-sm text-[#1d1d1f] focus:border-[#1d1d1f] focus:outline-none focus:ring-1 focus:ring-[#1d1d1f] transition-all"
                 >
-                  <option value="">Nenhum evento vinculado (Despesa Geral/Fixa)</option>
+                  <option value="">Nenhum evento vinculado (Despesa Geral / Fixa)</option>
                   {events.map((ev) => (
                     <option key={ev.id} value={ev.id}>
                       {ev.title}
@@ -1561,6 +1787,183 @@ export function FornecedoresClient({
                 </select>
               </div>
 
+              {/* SEÇÃO DINÂMICA: PRODUTOS / ITENS DO BOLETO */}
+              <div className="rounded-2xl border border-[#e5e5ea] bg-[#fbfbfd] p-3.5 sm:p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold uppercase tracking-wider text-[#1d1d1f]">
+                      Produtos / Itens do Boleto
+                    </span>
+                    <span className="rounded-full bg-[#1d1d1f] text-white px-2 py-0.5 text-[10px] font-bold">
+                      {billItems.length} {billItems.length === 1 ? 'item' : 'itens'}
+                    </span>
+                  </div>
+                  <span className="text-[11px] text-[#86868b]">
+                    Especifique unidades (cx, un, fd, kg, lt, etc.)
+                  </span>
+                </div>
+
+                {/* Lista de Itens */}
+                <div className="space-y-2.5">
+                  {billItems.map((item, index) => {
+                    const qVal = parseFloat(item.quantity.replace(',', '.')) || 0
+                    const pVal = parseFloat(item.unit_price.replace(',', '.')) || 0
+                    const subtotal = qVal * pVal
+
+                    return (
+                      <div
+                        key={item.id}
+                        className="rounded-xl border border-[#e5e5ea] bg-white p-3 space-y-2.5 shadow-2xs hover:border-[#d1d1d6] transition-all"
+                      >
+                        {/* Linha 1: Número, Nome e Excluir */}
+                        <div className="flex items-center gap-2">
+                          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-[#f5f5f7] text-[11px] font-bold text-[#6e6e73]">
+                            #{index + 1}
+                          </span>
+                          <input
+                            type="text"
+                            placeholder="Nome do produto ou insumo (Ex: Cerveja Heineken, Refrigerante 2L, Picanha...)"
+                            value={item.name}
+                            onChange={(e) => handleUpdateBillItem(item.id, 'name', e.target.value)}
+                            className="flex-1 rounded-lg border border-[#d1d1d6] bg-white px-3 py-1.5 text-xs text-[#1d1d1f] placeholder-[#86868b] focus:border-[#1d1d1f] focus:outline-none focus:ring-1 focus:ring-[#1d1d1f] transition-all"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveBillItem(item.id)}
+                            disabled={billItems.length <= 1}
+                            title={billItems.length <= 1 ? 'Mínimo de 1 item' : 'Remover item'}
+                            className="rounded-lg p-1.5 text-[#86868b] hover:bg-[#feeceb] hover:text-[#cf222e] disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-[#86868b] transition-colors cursor-pointer"
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
+
+                        {/* Linha 2: Quantidade, Unidade, Preço Unitário e Subtotal */}
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 border-t border-[#f5f5f7]">
+                          {/* Quantidade */}
+                          <div>
+                            <label className="block text-[10px] font-semibold text-[#6e6e73] mb-0.5">
+                              Quantidade
+                            </label>
+                            <input
+                              type="text"
+                              placeholder="Ex: 10"
+                              value={item.quantity}
+                              onChange={(e) => handleUpdateBillItem(item.id, 'quantity', e.target.value)}
+                              className="w-full rounded-lg border border-[#d1d1d6] bg-white px-2.5 py-1 text-xs text-[#1d1d1f] focus:border-[#1d1d1f] focus:outline-none focus:ring-1 focus:ring-[#1d1d1f] transition-all"
+                            />
+                          </div>
+
+                          {/* Unidade */}
+                          <div>
+                            <label className="block text-[10px] font-semibold text-[#6e6e73] mb-0.5">
+                              Unidade
+                            </label>
+                            <select
+                              value={item.unit}
+                              onChange={(e) => handleUpdateBillItem(item.id, 'unit', e.target.value)}
+                              className="w-full rounded-lg border border-[#d1d1d6] bg-white px-2 py-1 text-xs text-[#1d1d1f] focus:border-[#1d1d1f] focus:outline-none focus:ring-1 focus:ring-[#1d1d1f] transition-all"
+                            >
+                              {COMMON_UNITS.map((u) => (
+                                <option key={u.value} value={u.value}>
+                                  {u.label}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+
+                          {/* Preço Unitário */}
+                          <div>
+                            <label className="block text-[10px] font-semibold text-[#6e6e73] mb-0.5">
+                              Preço Unit. (R$)
+                            </label>
+                            <input
+                              type="text"
+                              placeholder="0,00"
+                              value={item.unit_price}
+                              onChange={(e) => handleUpdateBillItem(item.id, 'unit_price', e.target.value)}
+                              className="w-full rounded-lg border border-[#d1d1d6] bg-white px-2.5 py-1 text-xs text-[#1d1d1f] placeholder-[#86868b] focus:border-[#1d1d1f] focus:outline-none focus:ring-1 focus:ring-[#1d1d1f] transition-all"
+                            />
+                          </div>
+
+                          {/* Subtotal */}
+                          <div className="flex flex-col justify-end">
+                            <span className="block text-[10px] font-semibold text-[#6e6e73] mb-0.5">
+                              Subtotal
+                            </span>
+                            <div className="rounded-lg bg-[#fbfbfd] border border-[#e5e5ea] px-2.5 py-1 text-xs font-bold text-[#1d1d1f] text-right truncate">
+                              R$ {subtotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Unidade Personalizada (caso selecione 'outro') */}
+                        {item.unit === 'outro' && (
+                          <div className="pt-1">
+                            <input
+                              type="text"
+                              placeholder="Especifique a unidade personalizada (ex: galão, tambor, fita...)"
+                              value={item.customUnit || ''}
+                              onChange={(e) => handleUpdateBillItem(item.id, 'customUnit', e.target.value)}
+                              className="w-full rounded-lg border border-[#0071e3] bg-[#f0f7ff] px-2.5 py-1 text-xs text-[#1d1d1f] placeholder-[#86868b] focus:outline-none"
+                            />
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+
+                {/* Botão Adicionar Item */}
+                <button
+                  type="button"
+                  onClick={handleAddBillItem}
+                  className="w-full flex items-center justify-center gap-1.5 rounded-xl border border-dashed border-[#1d1d1f]/30 hover:border-[#1d1d1f] bg-white hover:bg-[#f5f5f7] py-2 text-xs font-semibold text-[#1d1d1f] transition-all cursor-pointer"
+                >
+                  <Plus size={15} strokeWidth={2.5} />
+                  <span>Adicionar Mais um Produto / Insumo</span>
+                </button>
+              </div>
+
+              {/* Título Geral Opcional e Valor Total */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-[#1d1d1f] mb-1">
+                    Título / Referência Geral (Opcional)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Ex: NF 1042 - Compras do Final de Semana"
+                    value={billGeneralDescription}
+                    onChange={(e) => setBillGeneralDescription(e.target.value)}
+                    className="w-full rounded-xl border border-[#d1d1d6] bg-white px-3.5 py-2 text-xs sm:text-sm text-[#1d1d1f] placeholder-[#86868b] focus:border-[#1d1d1f] focus:outline-none focus:ring-1 focus:ring-[#1d1d1f] transition-all"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-[#1d1d1f] mb-1 flex items-center justify-between">
+                    <span>Valor a Pagar (R$) *</span>
+                    {calculatedItemsTotal > 0 && (
+                      <span className="text-[11px] font-normal text-[#16a34a]">
+                        Soma: R$ {calculatedItemsTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                      </span>
+                    )}
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    name="amount"
+                    required
+                    placeholder="0,00"
+                    value={billTotalAmount}
+                    onChange={(e) => setBillTotalAmount(e.target.value)}
+                    className="w-full rounded-xl border border-[#d1d1d6] bg-white px-3.5 py-2 text-xs sm:text-sm font-bold text-[#1d1d1f] placeholder-[#86868b] focus:border-[#1d1d1f] focus:outline-none focus:ring-1 focus:ring-[#1d1d1f] transition-all"
+                  />
+                </div>
+              </div>
+
+              {/* Status Inicial da Conta */}
               <div>
                 <label className="block text-xs font-bold text-[#1d1d1f] mb-1.5 flex items-center justify-between">
                   <span>Status Inicial da Conta *</span>
@@ -1580,7 +1983,6 @@ export function FornecedoresClient({
                   </span>
                 </label>
 
-                {/* Input oculto para submissão imediata no formulário */}
                 <input type="hidden" name="status" value={billInitialStatus} />
 
                 <div className="grid grid-cols-2 gap-2.5">
@@ -1654,12 +2056,13 @@ export function FornecedoresClient({
                 </div>
               </div>
 
-              <div className="flex justify-end gap-2.5 pt-4 border-t border-[#f2f2f7]">
+              {/* Botões do Rodapé */}
+              <div className="flex justify-end gap-2.5 pt-4 border-t border-[#f2f2f7] shrink-0">
                 <button
                   type="button"
                   onClick={() => {
                     setBillModalOpen(false)
-                    setSelectedSupplierForBill('')
+                    resetBillForm('')
                   }}
                   className="px-4 py-2 text-xs font-semibold text-[#6e6e73] hover:text-[#1d1d1f] transition-colors cursor-pointer"
                 >
@@ -1670,7 +2073,7 @@ export function FornecedoresClient({
                   disabled={isPending}
                   className="rounded-xl bg-[#cf222e] hover:bg-[#a41a24] text-white px-5 py-2 text-xs font-semibold transition-all shadow-xs cursor-pointer disabled:opacity-50"
                 >
-                  {isPending ? 'Lançando...' : 'Gravar Conta a Pagar'}
+                  {isPending ? 'Salvando...' : editingBill ? 'Salvar Alterações' : 'Gravar Conta / Boleto'}
                 </button>
               </div>
             </form>

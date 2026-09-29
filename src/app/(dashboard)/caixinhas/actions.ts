@@ -158,7 +158,8 @@ export async function getFreeCashBalance(excludeCaixinhaId?: string): Promise<{
     0
   )
 
-  const freeBalance = Math.max(0, cashBalance - totalInCaixinhas)
+  // O saldo em conta bancária (cashBalance) já é o saldo livre, pois as caixinhas já foram retiradas
+  const freeBalance = cashBalance
 
   return {
     cashBalance,
@@ -386,6 +387,18 @@ export async function depositToCaixinha(formData: FormData) {
     return { error: error.message }
   }
 
+  // Registrar saída da conta bancária para a caixinha
+  const today = new Date().toISOString().split('T')[0]
+  await supabase.from('financial_transactions').insert({
+    type: 'expense',
+    amount: amount,
+    status: 'paid',
+    due_date: today,
+    paid_date: today,
+    description: `Transferência para Caixinha: ${existing.name}`,
+    created_by: userId || null,
+  })
+
   invalidateCache()
   revalidatePath('/')
   revalidatePath('/financeiro')
@@ -438,6 +451,18 @@ export async function withdrawFromCaixinha(formData: FormData) {
   if (error) {
     return { error: error.message }
   }
+
+  // Registrar entrada de volta na conta bancária a partir da caixinha
+  const today = new Date().toISOString().split('T')[0]
+  await supabase.from('financial_transactions').insert({
+    type: 'income',
+    amount: amount,
+    status: 'paid',
+    due_date: today,
+    paid_date: today,
+    description: `Resgate da Caixinha: ${existing.name}`,
+    created_by: userId || null,
+  })
 
   invalidateCache()
   revalidatePath('/')
