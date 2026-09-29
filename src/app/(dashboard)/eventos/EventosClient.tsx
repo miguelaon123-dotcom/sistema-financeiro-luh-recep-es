@@ -37,6 +37,9 @@ import {
   Filter,
   CalendarDays,
   UtensilsCrossed,
+  Receipt,
+  History,
+  PlusCircle,
 } from 'lucide-react'
 import {
   createEvent,
@@ -51,6 +54,8 @@ import {
   removeStaffFromEvent,
   EventStaffInput,
   receiveEventContractPayment,
+  addEventPayment,
+  deleteEventPayment,
 } from './actions'
 import { useConfirm } from '@/components/ConfirmDialog'
 
@@ -78,6 +83,9 @@ interface EventItem {
   status: 'budget' | 'approved' | 'completed' | 'canceled'
   contacts?: { id: string; name: string } | null
   financial_transactions?: EventTransaction[]
+  total_paid?: number
+  remaining_amount?: number
+  payments?: EventTransaction[]
 }
 
 interface ProductItem {
@@ -165,7 +173,10 @@ export function EventosClient({
   useEffect(() => {
     if (editingEvent) {
       setModalBudget(editingEvent.budget ? String(editingEvent.budget) : '')
-      setModalDepositAmount(editingEvent.deposit_amount ? String(editingEvent.deposit_amount) : '')
+      const initialPaid = editingEvent.total_paid !== undefined
+        ? (editingEvent.total_paid > 0 ? String(editingEvent.total_paid) : '')
+        : (editingEvent.deposit_amount ? String(editingEvent.deposit_amount) : '')
+      setModalDepositAmount(initialPaid)
       setModalDepositStatus(editingEvent.deposit_status === 'paid' ? 'paid' : 'pending')
       setModalGuestCount(editingEvent.guest_count ? String(editingEvent.guest_count) : '')
       setModalPaymentDueDate(editingEvent.payment_due_date ? String(editingEvent.payment_due_date) : '')
@@ -177,6 +188,61 @@ export function EventosClient({
       setModalPaymentDueDate('')
     }
   }, [editingEvent, isModalOpen])
+
+  // Estados para Lançar Parcela e Histórico de Pagamentos da Cliente
+  const [installmentModalEvent, setInstallmentModalEvent] = useState<EventItem | null>(null)
+  const [historyModalEvent, setHistoryModalEvent] = useState<EventItem | null>(null)
+  const [installmentAmount, setInstallmentAmount] = useState('')
+  const [installmentDate, setInstallmentDate] = useState('')
+  const [installmentDescription, setInstallmentDescription] = useState('')
+  const [installmentError, setInstallmentError] = useState<string | null>(null)
+
+  const openAddInstallment = (evt: EventItem) => {
+    setInstallmentModalEvent(evt)
+    setInstallmentAmount('')
+    setInstallmentDate(new Date().toISOString().split('T')[0])
+    const count = (evt.payments?.length || 0) + 1
+    setInstallmentDescription(`${count}ª Parcela`)
+    setInstallmentError(null)
+  }
+
+  const handleAddInstallmentSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    if (!installmentModalEvent) return
+    setInstallmentError(null)
+
+    const form = e.currentTarget
+    const formData = new FormData(form)
+
+    startTransition(async () => {
+      const res = await addEventPayment(formData)
+      if (res?.error) {
+        setInstallmentError(res.error)
+      } else {
+        setInstallmentModalEvent(null)
+        router.refresh()
+      }
+    })
+  }
+
+  const handleDeletePayment = async (txId: string, eventId: string) => {
+    const ok = await confirm({
+      message: 'Tem certeza que deseja excluir esta parcela? O valor será removido do extrato financeiro e o saldo restante do evento será restaurado.',
+      confirmLabel: 'Sim, excluir',
+      danger: true,
+    })
+    if (!ok) return
+
+    startTransition(async () => {
+      const res = await deleteEventPayment(txId, eventId)
+      if (res?.error) {
+        alert(res.error)
+      } else {
+        setHistoryModalEvent(null)
+        router.refresh()
+      }
+    })
+  }
 
   // Modais de Materiais, Devolução e Escala de Equipe
   const [allocatingEvent, setAllocatingEvent] = useState<EventItem | null>(null)
@@ -1372,165 +1438,117 @@ Por favor, confirmem presença com antecedência! ✅`
                           )}
                         </div>
 
-                        {/* 💰 Painel Financeiro Conectado com Sinal e Saldo Restante */}
-                        {Number(evt.budget || 0) > 0 && (
-                          <div className="pt-2 border-t border-[#f2f2f7] mt-3 space-y-2">
-                            {Number(evt.deposit_amount || 0) > 0 ? (
-                              <>
-                                {/* Bloco do Sinal / Entrada */}
-                                <div className="flex items-center justify-between text-xs bg-[#fdfcf7] border border-[#f3e8c8] p-2.5 rounded-xl text-[#78350f]">
-                                  <div className="flex items-center gap-1.5 min-w-0">
-                                    <DollarSign size={14} className="text-[#b45309] shrink-0" />
-                                    <div className="truncate">
-                                      <span className="text-[10px] uppercase font-bold text-[#b45309] block tracking-wider">
-                                        Sinal / Entrada
-                                      </span>
-                                      <span className="font-bold text-xs text-[#1d1d1f]">
-                                        R$ {Number(evt.deposit_amount).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                                      </span>
-                                    </div>
-                                  </div>
-                                  <div className="flex items-center gap-1.5 shrink-0">
-                                    {(() => {
-                                      const isSinalPaid =
-                                        evt.deposit_status === 'paid' ||
-                                        evt.status === 'completed' ||
-                                        (evt.financial_transactions || []).some(
-                                          (t) => t.description?.toLowerCase().includes('sinal') && t.status === 'paid'
-                                        )
-                                      return (
-                                        <>
-                                          <span
-                                            className={`text-[10px] font-bold px-2 py-0.5 rounded-md flex items-center gap-1 ${
-                                              isSinalPaid
-                                                ? 'bg-[#dcfce7] text-[#15803d]'
-                                                : 'bg-[#fef3c7] text-[#b45309]'
-                                            }`}
-                                          >
-                                            {isSinalPaid ? <Check size={11} /> : <Clock size={11} />}
-                                            {isSinalPaid ? 'Pago' : 'Pendente'}
-                                          </span>
-                                          <button
-                                            type="button"
-                                            onClick={() => handleToggleDepositStatus(evt.id, isSinalPaid ? 'pending' : 'paid')}
-                                            disabled={actionLoadingId === evt.id}
-                                            className={`text-[10px] font-semibold px-2 py-1 rounded-lg transition-all cursor-pointer ${
-                                              isSinalPaid
-                                                ? 'text-[#86868b] hover:text-[#cf222e] hover:bg-[#feeceb]'
-                                                : 'bg-[#15803d] text-white hover:bg-[#166534] shadow-xs active:scale-95'
-                                            }`}
-                                            title={
-                                              isSinalPaid
-                                                ? 'Marcar sinal como pendente'
-                                                : 'Marcar sinal como pago (sobe no Dashboard)'
-                                            }
-                                          >
-                                            {isSinalPaid ? 'Desfazer' : 'Marcar Pago'}
-                                          </button>
-                                        </>
-                                      )
-                                    })()}
-                                  </div>
-                                </div>
+                        {/* 💰 Painel Financeiro - Parcelas e Pagamentos */}
+                        {Number(evt.budget || 0) > 0 && (() => {
+                          const budgetNum = Number(evt.budget || 0)
+                          const incomeTxs = (evt.financial_transactions || []).filter((t) => t.type === 'income')
+                          const paidTxs = incomeTxs.filter((t) => t.status === 'paid')
+                          const totalPaid = evt.total_paid !== undefined
+                            ? evt.total_paid
+                            : paidTxs.reduce((sum, t) => sum + Number(t.amount || 0), 0)
+                          const remaining = Math.max(0, budgetNum - totalPaid)
+                          const percent = budgetNum > 0 ? Math.min(100, Math.round((totalPaid / budgetNum) * 100)) : 100
+                          const isCompleted = evt.status === 'completed' || remaining === 0
 
-                                {/* Bloco do Saldo Restante */}
-                                <div className="flex items-center justify-between text-xs bg-[#f8fafc] border border-[#e2e8f0] p-2.5 rounded-xl text-[#334155]">
-                                  <div className="flex items-center gap-1.5 min-w-0">
-                                    <Wallet size={14} className="text-[#64748b] shrink-0" />
-                                    <div className="truncate">
-                                      <span className="text-[10px] uppercase font-bold text-[#64748b] block tracking-wider">
-                                        Saldo Restante (Total R$ {Number(evt.budget).toLocaleString('pt-BR', { minimumFractionDigits: 2 })})
+                          return (
+                            <div className="pt-2.5 border-t border-[#f2f2f7] mt-3 space-y-2">
+                              {/* Barra de Progresso de Quitação */}
+                              <div className="space-y-1">
+                                <div className="flex items-center justify-between text-[11px]">
+                                  <span className="font-semibold text-[#1d1d1f] flex items-center gap-1">
+                                    {isCompleted ? (
+                                      <span className="text-[#1a7f37] flex items-center gap-1">
+                                        <CheckCircle2 size={12} /> Contrato 100% Quitado
                                       </span>
-                                      <div className="flex items-center gap-2">
-                                        <span className="font-bold text-xs text-[#1d1d1f]">
-                                          R$ {Math.max(0, Number(evt.budget || 0) - Number(evt.deposit_amount || 0)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                                        </span>
-                                        {evt.payment_due_date && (
-                                          <span className="text-[10px] text-[#b45309] font-medium">
-                                            • Vence: {new Date(evt.payment_due_date + 'T00:00:00').toLocaleDateString('pt-BR')}
-                                          </span>
-                                        )}
-                                      </div>
-                                    </div>
-                                  </div>
-                                  <div className="flex items-center gap-1.5 shrink-0">
-                                    {(() => {
-                                      const remainingTx = (evt.financial_transactions || []).find(
-                                        (t) => !t.description?.toLowerCase().includes('sinal') && t.type === 'income'
-                                      )
-                                      const isRemainingPaid = evt.status === 'completed' || remainingTx?.status === 'paid'
-                                      return (
-                                        <>
-                                          <span
-                                            className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${
-                                              isRemainingPaid
-                                                ? 'bg-[#dcfce7] text-[#15803d]'
-                                                : 'bg-[#f1f5f9] text-[#64748b]'
-                                            }`}
-                                          >
-                                            {isRemainingPaid ? '✓ Quitado' : 'Aguardando'}
-                                          </span>
-                                          {!isRemainingPaid && (
-                                            <button
-                                              type="button"
-                                              onClick={() => handleReceiveContract(evt.id)}
-                                              disabled={actionLoadingId === evt.id}
-                                              className="inline-flex items-center gap-1 text-[10px] font-bold text-white bg-[#1a7f37] hover:bg-[#15803d] cursor-pointer px-2 py-0.5 rounded transition-all shadow-xs"
-                                              title="Dar baixa e quitar saldo restante"
-                                            >
-                                              <Check size={11} />
-                                              Dar Baixa / Quitar
-                                            </button>
-                                          )}
-                                        </>
-                                      )
-                                    })()}
-                                  </div>
-                                </div>
-                              </>
-                            ) : (
-                              /* Sem sinal -> Exibição do Contrato Completo */
-                              <div className="flex items-center justify-between text-xs bg-[#fdfcf7] border border-[#f3e8c8] p-2 rounded-xl text-[#78350f]">
-                                <div className="flex items-center gap-1.5 font-medium">
-                                  <Wallet size={13} className="text-[#b45309]" />
-                                  <div>
-                                    <span>
-                                      Contrato: <strong>R$ {Number(evt.budget).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong>
-                                    </span>
-                                    {evt.payment_due_date && (
-                                      <span className="text-[10px] text-[#b45309] block">
-                                        Vencimento: {new Date(evt.payment_due_date + 'T00:00:00').toLocaleDateString('pt-BR')}
-                                      </span>
+                                    ) : (
+                                      <span>Pagamento: <strong>{percent}%</strong> recebido</span>
                                     )}
-                                  </div>
-                                </div>
-                                <div className="flex items-center gap-1.5">
-                                  <span
-                                    className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${
-                                      isContractPaid
-                                        ? 'bg-[#dcfce7] text-[#15803d]'
-                                        : 'bg-[#fef3c7] text-[#b45309]'
-                                    }`}
-                                  >
-                                    {isContractPaid ? '✓ Recebido' : 'Aguardando'}
                                   </span>
-                                  {!isContractPaid && (
+                                  <span className="font-bold text-[#1a7f37]">
+                                    R$ {totalPaid.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} / R$ {budgetNum.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                  </span>
+                                </div>
+                                <div className="w-full h-1.5 bg-[#e5e5ea] rounded-full overflow-hidden">
+                                  <div
+                                    className={`h-full transition-all duration-300 ${isCompleted ? 'bg-[#1a7f37]' : 'bg-[#b8860b]'}`}
+                                    style={{ width: `${percent}%` }}
+                                  />
+                                </div>
+                              </div>
+
+                              {/* Grid de Resumo: Já Pago vs Restante */}
+                              <div className="grid grid-cols-2 gap-2 text-xs">
+                                <div className="p-2 rounded-xl bg-[#e8f8ee] border border-[#b4e8c7] flex flex-col justify-between">
+                                  <span className="text-[10px] uppercase font-bold text-[#1a7f37] tracking-wider">
+                                    Total Já Pago
+                                  </span>
+                                  <span className="font-bold text-sm text-[#1a7f37] mt-0.5">
+                                    R$ {totalPaid.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                  </span>
+                                  {paidTxs.length > 0 ? (
                                     <button
                                       type="button"
-                                      onClick={() => handleReceiveContract(evt.id)}
-                                      disabled={actionLoadingId === evt.id}
-                                      className="inline-flex items-center gap-1 text-[10px] font-bold text-white bg-[#1a7f37] hover:bg-[#15803d] cursor-pointer px-2 py-0.5 rounded transition-all shadow-xs"
-                                      title="Dar baixa total no contrato e mover evento para Quitados"
+                                      onClick={() => setHistoryModalEvent(evt)}
+                                      className="text-[10px] text-[#1a7f37] underline text-left font-medium mt-1 cursor-pointer hover:text-[#145a27] flex items-center gap-0.5"
                                     >
-                                      <Check size={11} />
-                                      Dar Baixa / Quitar
+                                      <Receipt size={10} />
+                                      <span>Ver {paidTxs.length} {paidTxs.length === 1 ? 'parcela' : 'parcelas'}</span>
                                     </button>
+                                  ) : (
+                                    <span className="text-[10px] text-[#6e6e73] mt-1">Nenhum pagamento</span>
+                                  )}
+                                </div>
+
+                                <div className={`p-2 rounded-xl border flex flex-col justify-between ${
+                                  remaining > 0
+                                    ? 'bg-[#fff8e6] border-[#ffe58f] text-[#946200]'
+                                    : 'bg-[#f5f5f7] border-[#e5e5ea] text-[#6e6e73]'
+                                }`}>
+                                  <span className="text-[10px] uppercase font-bold tracking-wider">
+                                    Saldo a Receber
+                                  </span>
+                                  <span className={`font-bold text-sm mt-0.5 ${remaining > 0 ? 'text-[#946200]' : 'text-[#6e6e73]'}`}>
+                                    R$ {remaining.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                  </span>
+                                  {evt.payment_due_date && remaining > 0 ? (
+                                    <span className="text-[10px] text-[#946200] font-medium mt-1 truncate">
+                                      Vence: {new Date(evt.payment_due_date + 'T00:00:00').toLocaleDateString('pt-BR')}
+                                    </span>
+                                  ) : (
+                                    <span className="text-[10px] text-[#6e6e73] mt-1">
+                                      {remaining === 0 ? '✓ Sem pendências' : ''}
+                                    </span>
                                   )}
                                 </div>
                               </div>
-                            )}
-                          </div>
-                        )}
+
+                              {/* Botões de Ação de Pagamento */}
+                              {remaining > 0 && (
+                                <div className="flex items-center gap-1.5 pt-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => openAddInstallment(evt)}
+                                    className="flex-1 inline-flex items-center justify-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-xl bg-[#1d1d1f] hover:bg-[#333336] text-white shadow-2xs cursor-pointer transition-all active:scale-[0.98]"
+                                    title="Lançar valor pago pela cliente (sinal ou parcelas)"
+                                  >
+                                    <Plus size={13} />
+                                    <span>+ Lançar Parcela</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleReceiveContract(evt.id)}
+                                    disabled={actionLoadingId === evt.id}
+                                    className="inline-flex items-center justify-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-xl bg-[#e8f8ee] border border-[#b4e8c7] text-[#1a7f37] hover:bg-[#d5f3df] cursor-pointer transition-all shadow-2xs active:scale-[0.98]"
+                                    title="Quitar todo o saldo restante de uma só vez"
+                                  >
+                                    <Check size={13} />
+                                    <span>Quitar Tudo</span>
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })()}
 
                         {/* Lucro Previsto Líquido da Festa */}
                         {(Number(evt.budget || 0) > 0 || staffTotalCost > 0) && (
@@ -2423,22 +2441,22 @@ Por favor, confirmem presença com antecedência! ✅`
                 </div>
               </div>
 
-              {/* Configuração de Sinal / Entrada */}
+              {/* Configuração de Pagamento / Parcelas da Cliente */}
               <div className="p-3.5 rounded-2xl bg-[#fbfbfd] border border-[#e5e5ea] space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-1.5 text-xs font-bold text-[#1d1d1f]">
-                    <DollarSign size={15} className="text-[#b8860b]" />
-                    <span>Sinal / Entrada (Opcional)</span>
+                    <DollarSign size={15} className="text-[#1a7f37]" />
+                    <span>Pagamento / Parcelas da Cliente</span>
                   </div>
                   <span className="text-[11px] text-[#86868b]">
-                    Controle de pagamento separado
+                    Entrada ou parcelas pagas aos poucos
                   </span>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs font-semibold text-[#1d1d1f] mb-1">
-                      Valor do Sinal (R$)
+                      Valor Já Pago pela Cliente (R$)
                     </label>
                     <input
                       type="number"
@@ -2449,11 +2467,14 @@ Por favor, confirmem presença com antecedência! ✅`
                       placeholder="0,00"
                       className="w-full rounded-xl border border-[#d1d1d6] bg-white px-3.5 py-2 text-sm text-[#1d1d1f] placeholder-[#86868b] focus:border-[#1d1d1f] focus:outline-none focus:ring-1 focus:ring-[#1d1d1f] transition-all"
                     />
+                    <span className="text-[10px] text-[#86868b] mt-0.5 block">
+                      Total que a cliente já pagou até agora (sinal ou parcelas). Deixe 0 se ainda não pagou nada.
+                    </span>
                   </div>
 
                   <div>
                     <label className="block text-xs font-semibold text-[#1d1d1f] mb-1">
-                      Status do Sinal
+                      Status do Pagamento
                     </label>
                     <div className="grid grid-cols-2 gap-2">
                       <button
@@ -2476,10 +2497,13 @@ Por favor, confirmem presença com antecedência! ✅`
                             : 'bg-white border-[#d1d1d6] text-[#6e6e73] hover:bg-[#f5f5f7]'
                         }`}
                       >
-                        ✓ Pago
+                        ✓ Já Pago
                       </button>
                       <input type="hidden" name="deposit_status" value={modalDepositStatus} />
                     </div>
+                    <span className="text-[10px] text-[#86868b] mt-0.5 block">
+                      {modalDepositStatus === 'paid' ? 'Entra no extrato e soma no Saldo Livre.' : 'Fica agendado como pendente a receber.'}
+                    </span>
                   </div>
                 </div>
 
@@ -2487,7 +2511,11 @@ Por favor, confirmem presença com antecedência! ✅`
                 {Number(modalBudget) > 0 && (
                   <div className="pt-2 border-t border-[#ededf2] flex items-center justify-between text-xs text-[#6e6e73]">
                     <span>
-                      Sinal: <strong>R$ {(Number(modalDepositAmount) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong> ({modalDepositStatus === 'paid' ? 'Pago' : 'Pendente'})
+                      Já Pago:{' '}
+                      <strong className="text-[#1a7f37]">
+                        R$ {(Number(modalDepositAmount) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                      </strong>{' '}
+                      ({modalDepositStatus === 'paid' ? 'Já Recebido' : 'Pendente'})
                     </span>
                     <span>
                       Saldo Restante:{' '}
@@ -2526,6 +2554,311 @@ Por favor, confirmem presença com antecedência! ✅`
           </div>
         </div>
       )}
+
+      {/* Modal Registrar Pagamento / Parcela da Cliente */}
+      {installmentModalEvent && (() => {
+        const budgetNum = Number(installmentModalEvent.budget || 0)
+        const incomeTxs = (installmentModalEvent.financial_transactions || []).filter((t) => t.type === 'income')
+        const paidTxs = incomeTxs.filter((t) => t.status === 'paid')
+        const currentPaid = installmentModalEvent.total_paid !== undefined
+          ? installmentModalEvent.total_paid
+          : paidTxs.reduce((sum, t) => sum + Number(t.amount || 0), 0)
+        const currentRemaining = Math.max(0, budgetNum - currentPaid)
+        const inputAmountNum = Number(installmentAmount.replace(',', '.')) || 0
+        const previewRemaining = Math.max(0, currentRemaining - inputAmountNum)
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-in fade-in duration-200">
+            <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl border border-[#e5e5ea] animate-in zoom-in-95 duration-200">
+              <div className="flex items-center justify-between pb-4 border-b border-[#f2f2f7]">
+                <div className="flex items-center gap-2.5">
+                  <div className="rounded-xl bg-[#e8f8ee] p-2 text-[#1a7f37]">
+                    <Receipt size={20} />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-[#1d1d1f]">
+                      Lançar Pagamento / Parcela
+                    </h3>
+                    <p className="text-xs text-[#86868b] truncate max-w-[240px]">
+                      {installmentModalEvent.title}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setInstallmentModalEvent(null)}
+                  className="rounded-lg p-1 text-[#86868b] hover:bg-[#f5f5f7] hover:text-[#1d1d1f] transition-colors cursor-pointer"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {installmentError && (
+                <div className="mt-4 p-3 rounded-xl bg-[#fff2f0] border border-[#ffccc7] text-xs text-[#cf222e] font-medium">
+                  {installmentError}
+                </div>
+              )}
+
+              <form onSubmit={handleAddInstallmentSubmit} className="space-y-4 mt-4">
+                <input type="hidden" name="event_id" value={installmentModalEvent.id} />
+
+                {/* Resumo do Contrato */}
+                <div className="p-3.5 rounded-xl bg-[#f5f5f7] border border-[#e5e5ea] text-xs space-y-1.5">
+                  <div className="flex justify-between items-center text-[#6e6e73]">
+                    <span>Total do Contrato:</span>
+                    <strong className="font-mono text-[#1d1d1f]">
+                      R$ {budgetNum.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                    </strong>
+                  </div>
+                  <div className="flex justify-between items-center text-[#1a7f37]">
+                    <span>Total Já Pago Anteriormente:</span>
+                    <strong className="font-mono">
+                      R$ {currentPaid.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                    </strong>
+                  </div>
+                  <div className="flex justify-between items-center text-[#b45309] pt-1 border-t border-[#e5e5ea]">
+                    <span>Saldo Restante Atual:</span>
+                    <strong className="font-mono">
+                      R$ {currentRemaining.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                    </strong>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-[#1d1d1f] mb-1.5">
+                    Valor Pago Nesta Parcela (R$) *
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm font-semibold text-[#86868b]">
+                      R$
+                    </span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      name="amount"
+                      required
+                      autoFocus
+                      max={currentRemaining > 0 ? currentRemaining : undefined}
+                      value={installmentAmount}
+                      onChange={(e) => setInstallmentAmount(e.target.value)}
+                      placeholder="0,00"
+                      className="w-full rounded-xl border border-[#d2d2d7] bg-[#fbfbfd] py-2.5 pl-10 pr-3 text-sm font-bold text-[#1d1d1f] focus:border-[#1a7f37] focus:bg-white focus:outline-hidden transition-all"
+                    />
+                  </div>
+                  {currentRemaining > 0 && (
+                    <div className="mt-1 flex justify-end">
+                      <button
+                        type="button"
+                        onClick={() => setInstallmentAmount(String(currentRemaining))}
+                        className="text-[11px] text-[#0071e3] hover:underline cursor-pointer font-medium"
+                      >
+                        Pagar restante total (R$ {currentRemaining.toFixed(2)})
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-[#1d1d1f] mb-1">
+                      Data do Pagamento
+                    </label>
+                    <input
+                      type="date"
+                      name="payment_date"
+                      value={installmentDate}
+                      onChange={(e) => setInstallmentDate(e.target.value)}
+                      className="w-full rounded-xl border border-[#d1d1d6] bg-white px-3 py-2 text-xs text-[#1d1d1f] focus:border-[#1d1d1f] focus:outline-none transition-all"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-[#1d1d1f] mb-1">
+                      Identificação / Observação
+                    </label>
+                    <input
+                      type="text"
+                      name="description"
+                      value={installmentDescription}
+                      onChange={(e) => setInstallmentDescription(e.target.value)}
+                      placeholder="Ex: 2ª Parcela Pix"
+                      className="w-full rounded-xl border border-[#d1d1d6] bg-white px-3 py-2 text-xs text-[#1d1d1f] focus:border-[#1d1d1f] focus:outline-none transition-all"
+                    />
+                  </div>
+                </div>
+
+                {inputAmountNum > 0 && (
+                  <div className="p-3 rounded-xl bg-[#e8f8ee] border border-[#b4e8c7] text-xs text-[#1a7f37] space-y-1">
+                    <div className="flex justify-between items-center">
+                      <span>Novo Total Pago:</span>
+                      <strong>R$ {(currentPaid + inputAmountNum).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span>Novo Saldo Restante:</span>
+                      <strong>R$ {previewRemaining.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong>
+                    </div>
+                    {previewRemaining === 0 && (
+                      <p className="text-[11px] font-bold text-[#15803d] pt-1 border-t border-[#b4e8c7]">
+                        🎉 Este pagamento quitará 100% o contrato do evento!
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                <div className="flex justify-end gap-2.5 pt-3 border-t border-[#f2f2f7]">
+                  <button
+                    type="button"
+                    onClick={() => setInstallmentModalEvent(null)}
+                    className="px-4 py-2 text-xs font-semibold text-[#6e6e73] hover:text-[#1d1d1f] transition-colors cursor-pointer"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isPending || !installmentAmount || inputAmountNum <= 0}
+                    className="flex items-center gap-1.5 rounded-xl bg-[#1a7f37] hover:bg-[#15803d] px-5 py-2 text-xs font-semibold text-white transition-all shadow-xs active:scale-[0.98] disabled:opacity-50 cursor-pointer"
+                  >
+                    <Check size={14} />
+                    <span>{isPending ? 'Gravando...' : 'Confirmar Recebimento'}</span>
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* Modal Histórico de Parcelas Pagas da Cliente */}
+      {historyModalEvent && (() => {
+        const incomeTxs = (historyModalEvent.financial_transactions || []).filter((t) => t.type === 'income')
+        const paidTxs = incomeTxs.filter((t) => t.status === 'paid')
+        const totalPaid = historyModalEvent.total_paid !== undefined
+          ? historyModalEvent.total_paid
+          : paidTxs.reduce((sum, t) => sum + Number(t.amount || 0), 0)
+        const budgetNum = Number(historyModalEvent.budget || 0)
+        const remaining = Math.max(0, budgetNum - totalPaid)
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-in fade-in duration-200">
+            <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl border border-[#e5e5ea] animate-in zoom-in-95 duration-200">
+              <div className="flex items-center justify-between pb-4 border-b border-[#f2f2f7]">
+                <div className="flex items-center gap-2.5">
+                  <div className="rounded-xl bg-[#e8f8ee] p-2 text-[#1a7f37]">
+                    <History size={20} />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-[#1d1d1f]">
+                      Histórico de Parcelas Recebidas
+                    </h3>
+                    <p className="text-xs text-[#86868b] truncate max-w-[280px]">
+                      {historyModalEvent.title}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setHistoryModalEvent(null)}
+                  className="rounded-lg p-1 text-[#86868b] hover:bg-[#f5f5f7] hover:text-[#1d1d1f] transition-colors cursor-pointer"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="mt-4 space-y-4">
+                {/* Resumo */}
+                <div className="grid grid-cols-3 gap-2 p-3 rounded-xl bg-[#f5f5f7] text-xs">
+                  <div>
+                    <span className="text-[#86868b] block text-[11px]">Contrato:</span>
+                    <strong className="text-[#1d1d1f] font-mono">
+                      R$ {budgetNum.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                    </strong>
+                  </div>
+                  <div>
+                    <span className="text-[#1a7f37] block text-[11px]">Total Já Pago:</span>
+                    <strong className="text-[#1a7f37] font-mono">
+                      R$ {totalPaid.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                    </strong>
+                  </div>
+                  <div>
+                    <span className="text-[#b45309] block text-[11px]">A Receber:</span>
+                    <strong className="text-[#b45309] font-mono">
+                      R$ {remaining.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                    </strong>
+                  </div>
+                </div>
+
+                {/* Lista de Parcelas */}
+                <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                  {paidTxs.length === 0 ? (
+                    <div className="p-4 text-center text-xs text-[#86868b]">
+                      Nenhuma parcela paga registrada ainda para este evento.
+                    </div>
+                  ) : (
+                    paidTxs.map((tx, idx) => (
+                      <div
+                        key={tx.id}
+                        className="flex items-center justify-between p-3 rounded-xl border border-[#e5e5ea] bg-white hover:border-[#d1d1d6] transition-all text-xs"
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <div className="h-7 w-7 rounded-lg bg-[#e8f8ee] text-[#1a7f37] flex items-center justify-center font-bold text-xs">
+                            {idx + 1}º
+                          </div>
+                          <div>
+                            <span className="font-semibold text-[#1d1d1f] block">
+                              {tx.description || `Parcela ${idx + 1}`}
+                            </span>
+                            <span className="text-[11px] text-[#86868b]">
+                              {tx.paid_date || tx.due_date ? `Pago em ${new Date((tx.paid_date || tx.due_date) + 'T00:00:00').toLocaleDateString('pt-BR')}` : 'Data não informada'}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold font-mono text-[#1a7f37] text-sm">
+                            R$ {Number(tx.amount).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleDeletePayment(tx.id, historyModalEvent.id)}
+                            className="p-1.5 text-[#86868b] hover:text-[#cf222e] hover:bg-[#feeceb] rounded-lg transition-colors cursor-pointer"
+                            title="Excluir esta parcela (estorno)"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                <div className="flex justify-between items-center pt-3 border-t border-[#f2f2f7]">
+                  {remaining > 0 ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const ev = historyModalEvent
+                        setHistoryModalEvent(null)
+                        openAddInstallment(ev)
+                      }}
+                      className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-xl bg-[#1d1d1f] text-white hover:bg-[#333336] transition-all cursor-pointer shadow-xs"
+                    >
+                      <Plus size={13} />
+                      <span>+ Lançar Nova Parcela</span>
+                    </button>
+                  ) : <div />}
+                  <button
+                    type="button"
+                    onClick={() => setHistoryModalEvent(null)}
+                    className="px-4 py-2 text-xs font-semibold text-[#1d1d1f] bg-[#f5f5f7] hover:bg-[#e5e5ea] rounded-xl transition-colors cursor-pointer"
+                  >
+                    Fechar
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
     </div>
   )
 }

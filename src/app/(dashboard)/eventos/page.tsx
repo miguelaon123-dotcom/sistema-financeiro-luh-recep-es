@@ -4,6 +4,9 @@ import { EventosClient } from './EventosClient'
 
 import { getCachedData } from '@/lib/data-cache'
 
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
 export default async function EventosPage({
   searchParams,
 }: {
@@ -70,20 +73,31 @@ export default async function EventosPage({
 
       const rawEvents = (eventsRes.data as any[]) || []
       const mappedEvents = rawEvents.map((ev: any) => {
-        const sinalTx = ev.financial_transactions?.find((t: any) =>
+        const incomeTxs = (ev.financial_transactions || []).filter((t: any) => t.type === 'income')
+        const paidTxs = incomeTxs.filter((t: any) => t.status === 'paid')
+        const totalPaidAmount = paidTxs.reduce((sum: number, t: any) => sum + Number(t.amount || 0), 0)
+
+        const sinalTx = incomeTxs.find((t: any) =>
           t.description?.toLowerCase().includes('sinal')
         )
-        const remainingTx = ev.financial_transactions?.find((t: any) =>
-          !t.description?.toLowerCase().includes('sinal') && t.type === 'income'
+        const remainingTx = incomeTxs.find((t: any) =>
+          t.status === 'pending'
         )
+        const budgetNum = Number(ev.budget || 0)
+        const remainingAmount = Math.max(0, budgetNum - totalPaidAmount)
+        const isCompleted = ev.status === 'completed' || (budgetNum > 0 && totalPaidAmount >= budgetNum)
+
         const meta = eventMetaMap.get(ev.id)
         return {
           ...ev,
           guest_count: Number(ev.guest_count ?? meta?.guest_count ?? 0),
           payment_due_date: ev.payment_due_date || meta?.payment_due_date || remainingTx?.due_date || null,
-          deposit_amount: sinalTx ? Number(sinalTx.amount) : 0,
-          deposit_status: sinalTx ? (sinalTx.status === 'paid' ? 'paid' : 'pending') : 'pending',
-          deposit_paid_date: sinalTx?.paid_date || null,
+          deposit_amount: totalPaidAmount > 0 ? totalPaidAmount : (sinalTx ? Number(sinalTx.amount) : Number(ev.deposit_amount || 0)),
+          deposit_status: isCompleted || totalPaidAmount > 0 || sinalTx?.status === 'paid' ? 'paid' : (sinalTx?.status || 'pending'),
+          deposit_paid_date: sinalTx?.paid_date || (paidTxs.length > 0 ? paidTxs[paidTxs.length - 1].paid_date : null),
+          total_paid: totalPaidAmount,
+          remaining_amount: remainingAmount,
+          payments: paidTxs,
         }
       })
 

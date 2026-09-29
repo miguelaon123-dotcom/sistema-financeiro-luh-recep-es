@@ -1025,3 +1025,198 @@ export async function receiveEventContractPayment(eventId: string) {
   revalidatePath('/')
   return { success: true }
 }
+
+export async function addEventPayment(formData: FormData) {
+  const headersList = await headers()
+  const userId = headersList.get('x-user-id') || null
+  const supabase = createAdminClient()
+
+  const eventId = formData.get('event_id') as string
+  const amount = Number(formData.get('amount')) || 0
+  const paymentDate = (formData.get('payment_date') as string)?.trim() || new Date().toISOString().split('T')[0]
+  const description = (formData.get('description') as string)?.trim() || 'Parcela'
+
+  if (!eventId || amount <= 0) {
+    return { error: 'Informe um valor válido e positivo para a parcela.' }
+  }
+
+  // 1. Buscar o evento
+  const { data: event, error: fetchErr } = await supabase
+    .from('events')
+    .select('id, title, budget, client_id, event_date, status')
+    .eq('id', eventId)
+    .single()
+
+  if (fetchErr || !event) return { error: 'Evento não encontrado.' }
+
+  const budget = Number(event.budget) || 0
+
+  // 2. Buscar transações financeiras de receita do evento
+  const { data: existingTxs } = await supabase
+    .from('financial_transactions')
+    .select('id, description, amount, status, paid_date')
+    .eq('event_id', eventId)
+    .eq('type', 'income')
+
+  const txs: any[] = existingTxs || []
+  const paidTxs = txs.filter((t) => t.status === 'paid')
+  const currentTotalPaid = paidTxs.reduce((sum, t) => sum + Number(t.amount || 0), 0)
+  const newTotalPaid = currentTotalPaid + amount
+  const newRemaining = Math.max(0, budget - newTotalPaid)
+
+  // 3. Inserir a nova transação de parcela PAGA
+  const txDesc = `${description} - Evento: ${event.title}`
+  const newTxPayload: any = {
+    event_id: eventId,
+    contact_id: event.client_id || null,
+    type: 'income',
+    amount: amount,
+    description: txDesc,
+    due_date: paymentDate,
+    paid_date: paymentDate,
+    status: 'paid',
+    created_by: userId || null,
+  }
+
+  let insRes = await supabase.from('financial_transactions').insert(newTxPayload)
+  if (insRes.error && (insRes.error.code === 'PGRST204' || insRes.error.message?.includes('created_by'))) {
+    delete newTxPayload.created_by
+    await supabase.from('financial_transactions').insert(newTxPayload)
+  }
+
+  // 4. Atualizar ou remover a transação de saldo restante pendente
+  const remainingTx = txs.find((t) => t.status === 'pending' && !t.description?.toLowerCase().includes('sinal'))
+  if (newRemaining > 0) {
+    if (remainingTx) {
+      await supabase
+        .from('financial_transactions')
+        .update({
+          amount: newRemaining,
+          description: `Saldo Restante - Evento: ${event.title}`,
+        })
+        .eq('id', remainingTx.id)
+    } else {
+      const remPayload: any = {
+        event_id: eventId,
+        contact_id: event.client_id || null,
+        type: 'income',
+        amount: newRemaining,
+        description: `Saldo Restante - Evento: ${event.title}`,
+        due_date: event.event_date,
+        status: 'pending',
+        created_by: userId || null,
+      }
+      let rRes = await supabase.from('financial_transactions').insert(remPayload)
+      if (rRes.error && (rRes.error.code === 'PGRST204' || rRes.error.message?.includes('created_by'))) {
+        delete remPayload.created_by
+        await supabase.from('financial_transactions').insert(remPayload)
+      }
+    }
+  } else {
+    // Se quitou tudo, remove saldo restante pendente e conclui evento
+    if (remainingTx) {
+      await supabase.from('financial_transactions').delete().eq('id', remainingTx.id)
+    }
+    await supabase.from('events').update({ status: 'completed' }).eq('id', eventId)
+  }
+
+  // 5. Atualizar deposit_amount no evento para somar o novo total pago
+  try {
+    await supabase
+      .from('events')
+      .update({
+        deposit_amount: newTotalPaid,
+        deposit_status: 'paid',
+        deposit_paid_date: paymentDate,
+      })
+      .eq('id', eventId)
+  } catch {}
+
+  invalidateCache(['eventos', 'financeiro', 'dashboard'])
+  revalidatePath('/eventos')
+  revalidatePath('/financeiro')
+  revalidatePath('/')
+  return { success: true }
+}
+
+export async function deleteEventPayment(transactionId: string, eventId: string) {
+  const supabase = createAdminClient()
+
+  // 1. Buscar transação a ser excluída
+  const { data: tx, error: txErr } = await supabase
+    .from('financial_transactions')
+    .select('id, amount, event_id')
+    .eq('id', transactionId)
+    .single()
+
+  if (txErr || !tx) return { error: 'Pagamento não encontrado.' }
+
+  // 2. Excluir a transação
+  await supabase.from('financial_transactions').delete().eq('id', transactionId)
+
+  // 3. Buscar evento
+  const { data: event } = await supabase
+    .from('events')
+    .select('id, title, budget, client_id, event_date, status')
+    .eq('id', eventId)
+    .single()
+
+  if (event) {
+    const budget = Number(event.budget || 0)
+
+    // Buscar transações restantes
+    const { data: existingTxs } = await supabase
+      .from('financial_transactions')
+      .select('id, amount, status, description')
+      .eq('event_id', eventId)
+      .eq('type', 'income')
+
+    const txs: any[] = existingTxs || []
+    const paidTxs = txs.filter((t) => t.status === 'paid')
+    const newTotalPaid = paidTxs.reduce((sum, t) => sum + Number(t.amount || 0), 0)
+    const newRemaining = Math.max(0, budget - newTotalPaid)
+
+    // Atualizar saldo restante pendente
+    const remainingTx = txs.find((t) => t.status === 'pending' && !t.description?.toLowerCase().includes('sinal'))
+    if (newRemaining > 0) {
+      if (remainingTx) {
+        await supabase
+          .from('financial_transactions')
+          .update({ amount: newRemaining })
+          .eq('id', remainingTx.id)
+      } else {
+        const remPayload: any = {
+          event_id: eventId,
+          contact_id: event.client_id || null,
+          type: 'income',
+          amount: newRemaining,
+          description: `Saldo Restante - Evento: ${event.title}`,
+          due_date: event.event_date,
+          status: 'pending',
+        }
+        await supabase.from('financial_transactions').insert(remPayload)
+      }
+
+      // Se estava como completed e agora tem saldo a receber, volta para approved
+      if (event.status === 'completed') {
+        await supabase.from('events').update({ status: 'approved' }).eq('id', eventId)
+      }
+    }
+
+    try {
+      await supabase
+        .from('events')
+        .update({
+          deposit_amount: newTotalPaid,
+          deposit_status: newTotalPaid > 0 ? 'paid' : 'pending',
+        })
+        .eq('id', eventId)
+    } catch {}
+  }
+
+  invalidateCache(['eventos', 'financeiro', 'dashboard'])
+  revalidatePath('/eventos')
+  revalidatePath('/financeiro')
+  revalidatePath('/')
+  return { success: true }
+}
