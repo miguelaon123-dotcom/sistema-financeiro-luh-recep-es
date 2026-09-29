@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition, useEffect } from 'react'
+import { useState, useTransition, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   UserCheck,
@@ -57,6 +57,7 @@ import {
   deleteWorkEntry,
   WorkEntryData,
 } from './actions'
+import { isFounderRole } from './utils'
 import { useConfirm } from '@/components/ConfirmDialog'
 
 export interface EmployeeRole {
@@ -76,6 +77,7 @@ interface Employee {
   default_daily_rate: number
   active: boolean
   notes?: string | null
+  payment_day?: number | null
   created_at: string
 }
 
@@ -198,6 +200,13 @@ export function FuncionariosClient({
 
   // Estado para valor padrão ao trocar a função no formulário de funcionário
   const [selectedRoleDailyRate, setSelectedRoleDailyRate] = useState<number | null>(null)
+  const [employeeFormRole, setEmployeeFormRole] = useState<string>('')
+
+  // Lista exclusiva de Fundadores (apenas quem tem o cargo de Fundador pode ter Pró-Labore)
+  const founderEmployees = useMemo(
+    () => localEmployees.filter((e) => isFounderRole(e.role)),
+    [localEmployees]
+  )
 
   // Copiar chave PIX
   const handleCopyPix = (id: string, pixKey: string) => {
@@ -640,8 +649,17 @@ export function FuncionariosClient({
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
   })()
 
-  const handleOpenProlaboreModal = (emp: Employee, existing?: Prolabore) => {
-    setProlaboreEmployee(emp)
+  const handleOpenProlaboreModal = (emp?: Employee | null, existing?: Prolabore) => {
+    const target = emp || (founderEmployees.length > 0 ? founderEmployees[0] : null)
+    if (!target) {
+      alert('Nenhum colaborador com o cargo de Fundador cadastrado. O Pró-Labore é exclusivo para quem tem o cargo de Fundador.')
+      return
+    }
+    if (!isFounderRole(target.role)) {
+      alert('O Pró-Labore é exclusivo para colaboradores com o cargo de Fundador.')
+      return
+    }
+    setProlaboreEmployee(target)
     setEditingProlabore(existing || null)
     setProlaboreFormError(null)
     setIsProlaboreModalOpen(true)
@@ -780,6 +798,7 @@ export function FuncionariosClient({
           <button
             onClick={() => {
               setEditingEmployee(null)
+              setEmployeeFormRole(roles.length > 0 ? roles[0].name : 'Garçom')
               setFormError(null)
               setSelectedRoleDailyRate(null)
               setIsModalOpen(true)
@@ -869,11 +888,11 @@ export function FuncionariosClient({
           </button>
         </div>
 
-        {mainTab === 'prolabore' && localEmployees.length > 0 && (
+        {mainTab === 'prolabore' && (
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => handleOpenProlaboreModal(localEmployees[0])}
+              onClick={() => handleOpenProlaboreModal(founderEmployees[0] || null)}
               className="flex items-center gap-1.5 rounded-xl bg-[#7c3aed] px-3.5 py-2 text-xs font-semibold text-white hover:bg-[#6d28d9] transition-all shadow-xs cursor-pointer active:scale-[0.98]"
             >
               <Plus size={14} strokeWidth={2.2} />
@@ -966,9 +985,15 @@ export function FuncionariosClient({
                         {/* Topo do Card */}
                         <div className="flex justify-between items-start mb-3 gap-2">
                           <div>
-                            <span className="inline-flex items-center gap-1 text-[11px] font-bold text-[#b8860b] bg-[#fffaf0] border border-[#fef3c7] px-2 py-0.5 rounded-md">
-                              <Briefcase size={11} /> {emp.role}
-                            </span>
+                            {isFounderRole(emp.role) ? (
+                              <span className="inline-flex items-center gap-1 text-[11px] font-bold text-[#7c3aed] bg-[#f5f3ff] border border-[#e9d5ff] px-2 py-0.5 rounded-md">
+                                <Sparkles size={11} /> {emp.role} (Fundador)
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 text-[11px] font-bold text-[#b8860b] bg-[#fffaf0] border border-[#fef3c7] px-2 py-0.5 rounded-md">
+                                <Briefcase size={11} /> {emp.role}
+                              </span>
+                            )}
                             <h3 className="font-bold text-base text-[#1d1d1f] mt-1.5 leading-snug">
                               {emp.name}
                             </h3>
@@ -991,64 +1016,132 @@ export function FuncionariosClient({
 
                         {/* Detalhes */}
                         <div className="space-y-2 text-xs text-[#6e6e73] my-3">
-                          <p className="flex items-center gap-2 font-medium text-[#1d1d1f]">
-                            <DollarSign size={13} className="text-[#b8860b]" />
-                            <span>
-                              Diária Padrão: <strong>R$ {Number(emp.default_daily_rate).toFixed(2)}</strong>
-                            </span>
-                          </p>
-                          <p className="flex items-center gap-2">
-                            <Calendar size={13} className="text-[#86868b]" />
-                            <span>
-                              Dias Trabalhados: <strong>{fin.totalDaysWorked} {fin.totalDaysWorked === 1 ? 'dia' : 'dias'}</strong>
-                              {fin.pendingDaysWorked > 0 ? (
-                                <span className="text-[#b45309] font-medium text-[11px] ml-1">({fin.pendingDaysWorked} pend.)</span>
-                              ) : fin.totalDaysWorked > 0 ? (
-                                <span className="text-[#15803d] font-medium text-[11px] ml-1">(quitado)</span>
-                              ) : null}
-                            </span>
-                          </p>
-
-                          {/* Resumo de Diárias / Acerto */}
-                          <div className="pt-2 border-t border-[#f2f2f7] mt-2 flex flex-col gap-2 bg-[#fdfcf7] p-2.5 rounded-xl border border-[#f3e8c8]">
-                            <div className="flex items-center justify-between text-xs">
-                              <div>
-                                <span className="text-[10px] text-[#86868b] block font-medium">Acerto de Diárias:</span>
-                                <span className={`font-bold text-xs ${fin.totalPending > 0 ? 'text-[#b45309]' : 'text-[#15803d]'}`}>
-                                  {fin.totalPending > 0 ? `R$ ${fin.totalPending.toFixed(2)} a pagar` : '✓ Todas pagas'}
+                          {isFounderRole(emp.role) ? (
+                            <>
+                              <p className="flex items-center gap-2 font-medium text-[#7c3aed]">
+                                <BadgeDollarSign size={13} className="text-[#7c3aed]" />
+                                <span>
+                                  Pró-Labore Padrão: <strong>R$ {Number(emp.default_daily_rate).toFixed(2)} / mês</strong>
                                 </span>
-                              </div>
-                              <div className="flex items-center gap-1.5">
-                                <button
-                                  type="button"
-                                  onClick={() => openWorkModal(emp)}
-                                  className="text-[11px] font-semibold text-[#166534] bg-[#dcfce7] hover:bg-[#bbf7d0] px-2 py-1 rounded-lg transition-colors cursor-pointer flex items-center gap-1"
-                                  title="Lançar dias trabalhados para este colaborador"
-                                >
-                                  <Plus size={11} strokeWidth={2.5} />
-                                  <span>+ Dias</span>
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setStatementEmployee(emp)}
-                                  className="text-[11px] font-semibold text-[#0071e3] bg-[#ebf4fe] hover:bg-[#d0e5fc] px-2 py-1 rounded-lg transition-colors cursor-pointer"
-                                >
-                                  Extrato
-                                </button>
+                              </p>
+                              <p className="flex items-center gap-2 font-medium text-[#1d1d1f]">
+                                <Clock size={13} className="text-[#86868b]" />
+                                <span>
+                                  Dia de Pagamento: <strong>{emp.payment_day ? `Todo dia ${String(emp.payment_day).padStart(2, '0')}` : 'Não definido'}</strong>
+                                </span>
+                              </p>
+                            </>
+                          ) : (
+                            <>
+                              <p className="flex items-center gap-2 font-medium text-[#1d1d1f]">
+                                <DollarSign size={13} className="text-[#b8860b]" />
+                                <span>
+                                  Diária Padrão: <strong>R$ {Number(emp.default_daily_rate).toFixed(2)}</strong>
+                                </span>
+                              </p>
+                              {emp.payment_day && (
+                                <p className="flex items-center gap-2">
+                                  <Clock size={13} className="text-[#86868b]" />
+                                  <span>
+                                    Dia de Pagamento: <strong>Todo dia {String(emp.payment_day).padStart(2, '0')}</strong>
+                                  </span>
+                                </p>
+                              )}
+                              <p className="flex items-center gap-2">
+                                <Calendar size={13} className="text-[#86868b]" />
+                                <span>
+                                  Dias Trabalhados: <strong>{fin.totalDaysWorked} {fin.totalDaysWorked === 1 ? 'dia' : 'dias'}</strong>
+                                  {fin.pendingDaysWorked > 0 ? (
+                                    <span className="text-[#b45309] font-medium text-[11px] ml-1">({fin.pendingDaysWorked} pend.)</span>
+                                  ) : fin.totalDaysWorked > 0 ? (
+                                    <span className="text-[#15803d] font-medium text-[11px] ml-1">(quitado)</span>
+                                  ) : null}
+                                </span>
+                              </p>
+                            </>
+                          )}
+
+                          {/* Bloco de Acerto / Pró-Labore */}
+                          {isFounderRole(emp.role) ? (
+                            <div className="pt-2 border-t border-[#f2f2f7] mt-2 flex flex-col gap-2 bg-[#faf5ff] p-2.5 rounded-xl border border-[#e9d5ff]">
+                              <div className="flex items-center justify-between text-xs">
+                                <div>
+                                  <span className="text-[10px] text-[#7c3aed] block font-bold uppercase tracking-wider">Pró-Labore:</span>
+                                  {(() => {
+                                    const empProlabores = localProlabores.filter((p) => p.employee_id === emp.id)
+                                    const empPending = empProlabores.filter((p) => p.payment_status !== 'paid')
+                                    const pendingTotal = empPending.reduce((acc, p) => acc + Number(p.amount || 0), 0)
+                                    return (
+                                      <span className={`font-bold text-xs ${pendingTotal > 0 ? 'text-[#7c3aed]' : 'text-[#15803d]'}`}>
+                                        {pendingTotal > 0 ? `R$ ${pendingTotal.toFixed(2)} a pagar` : '✓ Quitado'}
+                                      </span>
+                                    )
+                                  })()}
+                                </div>
+                                <div className="flex items-center gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenProlaboreModal(emp)}
+                                    className="text-[11px] font-semibold text-[#7c3aed] bg-[#f3e8ff] hover:bg-[#e9d5ff] px-2 py-1 rounded-lg transition-colors cursor-pointer flex items-center gap-1"
+                                    title="Lançar Pró-Labore para este fundador"
+                                  >
+                                    <Plus size={11} strokeWidth={2.5} />
+                                    <span>+ Pró-Labore</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setMainTab('prolabore')
+                                      if (typeof window !== 'undefined') window.history.replaceState(null, '', '?tab=prolabore')
+                                    }}
+                                    className="text-[11px] font-semibold text-[#6d28d9] bg-white border border-[#ddd6fe] hover:bg-[#f5f3ff] px-2 py-1 rounded-lg transition-colors cursor-pointer"
+                                  >
+                                    Ver Todos
+                                  </button>
+                                </div>
                               </div>
                             </div>
-                            {fin.totalPending > 0 && (
-                              <button
-                                type="button"
-                                onClick={() => handlePayAllDailies(emp.id)}
-                                disabled={actionLoadingId === emp.id}
-                                className="w-full text-center text-xs font-semibold text-white bg-[#1a7f37] hover:bg-[#146c2e] py-1.5 px-3 rounded-lg transition-colors cursor-pointer shadow-xs flex items-center justify-center gap-1.5 disabled:opacity-50"
-                              >
-                                <Check size={13} strokeWidth={2.5} />
-                                <span>Pagar R$ {fin.totalPending.toFixed(2)} (Descontar no Saldo)</span>
-                              </button>
-                            )}
-                          </div>
+                          ) : (
+                            <div className="pt-2 border-t border-[#f2f2f7] mt-2 flex flex-col gap-2 bg-[#fdfcf7] p-2.5 rounded-xl border border-[#f3e8c8]">
+                              <div className="flex items-center justify-between text-xs">
+                                <div>
+                                  <span className="text-[10px] text-[#86868b] block font-medium">Acerto de Diárias:</span>
+                                  <span className={`font-bold text-xs ${fin.totalPending > 0 ? 'text-[#b45309]' : 'text-[#15803d]'}`}>
+                                    {fin.totalPending > 0 ? `R$ ${fin.totalPending.toFixed(2)} a pagar` : '✓ Todas pagas'}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => openWorkModal(emp)}
+                                    className="text-[11px] font-semibold text-[#166534] bg-[#dcfce7] hover:bg-[#bbf7d0] px-2 py-1 rounded-lg transition-colors cursor-pointer flex items-center gap-1"
+                                    title="Lançar dias trabalhados para este colaborador"
+                                  >
+                                    <Plus size={11} strokeWidth={2.5} />
+                                    <span>+ Dias</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setStatementEmployee(emp)}
+                                    className="text-[11px] font-semibold text-[#0071e3] bg-[#ebf4fe] hover:bg-[#d0e5fc] px-2 py-1 rounded-lg transition-colors cursor-pointer"
+                                  >
+                                    Extrato
+                                  </button>
+                                </div>
+                              </div>
+                              {fin.totalPending > 0 && (
+                                <button
+                                  type="button"
+                                  onClick={() => handlePayAllDailies(emp.id)}
+                                  disabled={actionLoadingId === emp.id}
+                                  className="w-full text-center text-xs font-semibold text-white bg-[#1a7f37] hover:bg-[#146c2e] py-1.5 px-3 rounded-lg transition-colors cursor-pointer shadow-xs flex items-center justify-center gap-1.5 disabled:opacity-50"
+                                >
+                                  <Check size={13} strokeWidth={2.5} />
+                                  <span>Pagar R$ {fin.totalPending.toFixed(2)} (Descontar no Saldo)</span>
+                                </button>
+                              )}
+                            </div>
+                          )}
 
                           {/* Chave PIX com Cópia Rápida */}
                           {emp.pix_key && (
@@ -1084,6 +1177,8 @@ export function FuncionariosClient({
                           type="button"
                           onClick={() => {
                             setEditingEmployee(emp)
+                            setEmployeeFormRole(emp.role)
+                            setSelectedRoleDailyRate(null)
                             setFormError(null)
                             setIsModalOpen(true)
                           }}
@@ -1232,9 +1327,16 @@ export function FuncionariosClient({
                       {/* Topo do Card */}
                       <div className="flex justify-between items-start mb-3 gap-2">
                         <div>
-                          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-[#b8860b] bg-[#fffaf0] border border-[#fef3c7] px-2 py-0.5 rounded-md">
-                            <Briefcase size={11} /> {emp.role}
-                          </span>
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="inline-flex items-center gap-1 text-[11px] font-bold text-[#b8860b] bg-[#fffaf0] border border-[#fef3c7] px-2 py-0.5 rounded-md">
+                              <Briefcase size={11} /> {emp.role}
+                            </span>
+                            {emp.payment_day && (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-[#0071e3] bg-[#ebf4fe] border border-[#d0e5fc] px-1.5 py-0.5 rounded-md">
+                                <Clock size={10} /> Pgto dia {String(emp.payment_day).padStart(2, '0')}
+                              </span>
+                            )}
+                          </div>
                           <h4 className="font-bold text-base text-[#1d1d1f] mt-1.5 leading-snug">
                             {emp.name}
                           </h4>
@@ -1534,7 +1636,7 @@ export function FuncionariosClient({
                 {localProlabores.length}
               </p>
               <p className="text-[11px] text-[#86868b] mt-0.5">
-                em {localEmployees.length} colaboradores
+                em {founderEmployees.length} fundadores
               </p>
             </div>
           </div>
@@ -1543,27 +1645,27 @@ export function FuncionariosClient({
           <div className="rounded-2xl border border-[#e5e5ea] bg-white shadow-xs p-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-5 gap-3">
               <div>
-                <h3 className="text-base font-bold text-[#1d1d1f]">Pró-Labore por Colaborador</h3>
+                <h3 className="text-base font-bold text-[#1d1d1f]">Pró-Labore por Fundador</h3>
                 <p className="text-xs text-[#6e6e73]">
-                  Gerencie as retiradas mensais fixas de cada colaborador. O pagamento é lançado automaticamente no Financeiro.
+                  Gerencie as retiradas mensais fixas dos fundadores. O pagamento é lançado automaticamente no Financeiro.
                 </p>
               </div>
             </div>
 
-            {localEmployees.length === 0 ? (
+            {founderEmployees.length === 0 ? (
               <div className="py-12 text-center border border-dashed border-[#e5e5ea] rounded-2xl bg-[#fafafa]">
-                <BadgeDollarSign className="mx-auto h-8 w-8 text-[#86868b] mb-2 stroke-[1.5]" />
-                <p className="text-[#1d1d1f] font-medium text-sm">Nenhum colaborador cadastrado</p>
-                <p className="text-xs text-[#86868b] mt-0.5">
-                  Cadastre colaboradores primeiro na aba "Equipe & Funções".
+                <BadgeDollarSign className="mx-auto h-8 w-8 text-[#7c3aed] mb-2 stroke-[1.5]" />
+                <p className="text-[#1d1d1f] font-medium text-sm">Nenhum fundador cadastrado</p>
+                <p className="text-xs text-[#86868b] mt-0.5 max-w-md mx-auto">
+                  O Pró-Labore é exclusivo para colaboradores com o cargo de <strong>Fundador(a)</strong>. Cadastre ou altere a função de um colaborador para Fundador na aba "Equipe & Funções".
                 </p>
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
-                {localEmployees.filter(emp =>
+                {founderEmployees.filter((emp: Employee) =>
                   emp.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                   emp.role.toLowerCase().includes(searchTerm.toLowerCase())
-                ).map((emp) => {
+                ).map((emp: Employee) => {
                   const empProlabores = localProlabores.filter((p) => p.employee_id === emp.id)
                   const empPending   = empProlabores.filter((p) => p.payment_status !== 'paid')
                   const empPaid      = empProlabores.filter((p) => p.payment_status === 'paid')
@@ -1584,6 +1686,11 @@ export function FuncionariosClient({
                             </span>
                             <h4 className="font-bold text-base text-[#1d1d1f] mt-1.5 leading-snug">{emp.name}</h4>
                             <span className="text-[11px] text-[#86868b]">{emp.role}</span>
+                            {emp.payment_day ? (
+                              <span className="text-[11px] font-medium text-[#7c3aed] block mt-0.5">
+                                📅 Pagamento: todo dia {String(emp.payment_day).padStart(2, '0')}
+                              </span>
+                            ) : null}
                           </div>
                           <span className={`shrink-0 inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${
                             empPendingTotal > 0
@@ -1742,7 +1849,32 @@ export function FuncionariosClient({
             )}
 
             <form onSubmit={handleProlaboreSubmit} className="mt-5 space-y-4 text-xs">
-              <input type="hidden" name="employee_id" value={prolaboreEmployee.id} />
+              <div>
+                <label className="block font-semibold text-[#1d1d1f] mb-1">Fundador(a) Beneficiário(a) *</label>
+                {editingProlabore ? (
+                  <div className="p-2.5 rounded-xl bg-[#f5f5f7] border border-[#e5e5ea] text-sm font-semibold text-[#1d1d1f]">
+                    {prolaboreEmployee.name} — {prolaboreEmployee.role}
+                    <input type="hidden" name="employee_id" value={prolaboreEmployee.id} />
+                  </div>
+                ) : (
+                  <select
+                    name="employee_id"
+                    required
+                    value={prolaboreEmployee.id}
+                    onChange={(e) => {
+                      const found = founderEmployees.find((f: Employee) => f.id === e.target.value)
+                      if (found) setProlaboreEmployee(found)
+                    }}
+                    className="w-full rounded-xl border border-[#d1d1d6] bg-white px-3.5 py-2 text-sm text-[#1d1d1f] focus:outline-none focus:border-[#7c3aed]"
+                  >
+                    {founderEmployees.map((f: Employee) => (
+                      <option key={f.id} value={f.id}>
+                        {f.name} — {f.role} {f.payment_day ? `(Pgto dia ${f.payment_day})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
               {editingProlabore && <input type="hidden" name="id" value={editingProlabore.id} />}
 
               <div className="grid grid-cols-2 gap-3">
@@ -1759,12 +1891,17 @@ export function FuncionariosClient({
                 <div>
                   <label className="block font-semibold text-[#1d1d1f] mb-1">Valor (R$) *</label>
                   <input
+                    key={`amount-${prolaboreEmployee.id}-${editingProlabore?.id || 'new'}`}
                     type="number"
                     step="0.01"
                     min="0.01"
                     name="amount"
                     required
-                    defaultValue={editingProlabore?.amount ? Number(editingProlabore.amount) : ''}
+                    defaultValue={
+                      editingProlabore?.amount
+                        ? Number(editingProlabore.amount)
+                        : (prolaboreEmployee.default_daily_rate > 0 ? Number(prolaboreEmployee.default_daily_rate) : '')
+                    }
                     placeholder="0,00"
                     className="w-full rounded-xl border border-[#d1d1d6] bg-white px-3.5 py-2 text-sm text-[#1d1d1f] focus:outline-none focus:border-[#7c3aed]"
                   />
@@ -1877,6 +2014,7 @@ export function FuncionariosClient({
                     required
                     defaultValue={editingEmployee?.role || (roles.length > 0 ? roles[0].name : 'Garçom')}
                     onChange={(e) => {
+                      setEmployeeFormRole(e.target.value)
                       const selected = roles.find((r) => r.name === e.target.value)
                       if (selected) {
                         setSelectedRoleDailyRate(selected.default_daily_rate)
@@ -1898,7 +2036,9 @@ export function FuncionariosClient({
 
                 <div>
                   <label className="block font-semibold text-[#1d1d1f] mb-1">
-                    Valor Diária Padrão (R$)
+                    {isFounderRole(employeeFormRole || editingEmployee?.role)
+                      ? 'Valor Pró-Labore Padrão (R$)'
+                      : 'Valor Diária Padrão (R$)'}
                   </label>
                   <input
                     key={selectedRoleDailyRate !== null ? `rate-${selectedRoleDailyRate}` : 'rate-default'}
@@ -1915,21 +2055,48 @@ export function FuncionariosClient({
                     placeholder="150,00"
                     className="w-full rounded-xl border border-[#d1d1d6] bg-white px-3.5 py-2 text-sm text-[#1d1d1f] focus:outline-none"
                   />
+                  <p className="text-[11px] text-[#86868b] mt-1">
+                    {isFounderRole(employeeFormRole || editingEmployee?.role)
+                      ? 'Retirada mensal fixa para fundador(a).'
+                      : 'Valor padrão pago por festa/diária.'}
+                  </p>
                 </div>
               </div>
 
+              {/* Dia de Pagamento & Chave PIX */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold text-[#1d1d1f] mb-1">
+                    Dia de Pagamento (Dia do Mês)
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="31"
+                    name="payment_day"
+                    defaultValue={editingEmployee?.payment_day || ''}
+                    placeholder="Ex: 5 (todo dia 5)"
+                    className="w-full rounded-xl border border-[#d1d1d6] bg-white px-3.5 py-2 text-sm text-[#1d1d1f] focus:outline-none"
+                  />
+                  <p className="text-[11px] text-[#86868b] mt-1">
+                    {isFounderRole(employeeFormRole || editingEmployee?.role)
+                      ? 'Dia fixo do mês para retirada do pró-labore (1 a 31).'
+                      : 'Dia do mês programado para acerto das diárias (1 a 31).'}
+                  </p>
+                </div>
 
-              <div>
-                <label className="block font-semibold text-[#1d1d1f] mb-1">
-                  Chave PIX (para pagamento de diárias)
-                </label>
-                <input
-                  type="text"
-                  name="pix_key"
-                  defaultValue={editingEmployee?.pix_key || ''}
-                  placeholder="CPF, Telefone, E-mail ou Chave Aleatória"
-                  className="w-full rounded-xl border border-[#d1d1d6] bg-white px-3.5 py-2 text-sm text-[#1d1d1f] focus:outline-none"
-                />
+                <div>
+                  <label className="block font-semibold text-[#1d1d1f] mb-1">
+                    Chave PIX (para pagamento)
+                  </label>
+                  <input
+                    type="text"
+                    name="pix_key"
+                    defaultValue={editingEmployee?.pix_key || ''}
+                    placeholder="CPF, Telefone, E-mail ou Chave Aleatória"
+                    className="w-full rounded-xl border border-[#d1d1d6] bg-white px-3.5 py-2 text-sm text-[#1d1d1f] focus:outline-none"
+                  />
+                </div>
               </div>
 
               <div>

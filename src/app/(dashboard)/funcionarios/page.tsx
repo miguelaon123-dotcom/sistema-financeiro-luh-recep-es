@@ -1,8 +1,8 @@
 import { createAdminClient } from '@/lib/supabase/server'
 import { headers } from 'next/headers'
 import { FuncionariosClient } from './FuncionariosClient'
-
 import { getCachedData } from '@/lib/data-cache'
+import { parseEmployeeNotes, isFounderRole } from './utils'
 
 export default async function FuncionariosPage() {
   const supabase = createAdminClient()
@@ -18,7 +18,7 @@ export default async function FuncionariosPage() {
   } = await getCachedData(
     'funcionarios_data',
     async () => {
-      const [empRes, staffRes, rolesRes, prolaboreRes, workLogsRes] = await Promise.all([
+      const [empRes, staffRes, rolesRes, prolaboreRes, workLogsRes, prolaboreLogsRes] = await Promise.all([
         supabase
           .from('employees')
           .select('*')
@@ -38,6 +38,11 @@ export default async function FuncionariosPage() {
           .from('audit_logs')
           .select('*')
           .like('action', 'employee_work_%')
+          .order('created_at', { ascending: true }),
+        supabase
+          .from('audit_logs')
+          .select('*')
+          .like('action', 'prolabore_%')
           .order('created_at', { ascending: true }),
       ])
 
@@ -60,11 +65,63 @@ export default async function FuncionariosPage() {
         }
       }
 
+      // Reconstruir Pró-Labores (tabela nativa + audit_logs)
+      const prolaboreMap = new Map<string, any>()
+      if (prolaboreRes.data) {
+        for (const p of prolaboreRes.data) {
+          prolaboreMap.set(p.id, p)
+        }
+      }
+      if (prolaboreLogsRes.data) {
+        for (const log of prolaboreLogsRes.data) {
+          if (log.action === 'prolabore_deleted') {
+            prolaboreMap.delete(log.record_id)
+          } else if (log.action === 'prolabore_created' && log.new_data) {
+            prolaboreMap.set(log.record_id, {
+              id: log.record_id,
+              ...log.new_data,
+              payment_status: log.new_data.payment_status || 'pending',
+              created_at: log.created_at,
+            })
+          } else if (log.action === 'prolabore_updated' && prolaboreMap.has(log.record_id)) {
+            const cur = prolaboreMap.get(log.record_id)
+            prolaboreMap.set(log.record_id, { ...cur, ...log.new_data })
+          } else if (log.action === 'prolabore_paid' && prolaboreMap.has(log.record_id)) {
+            const cur = prolaboreMap.get(log.record_id)
+            cur.payment_status = 'paid'
+            cur.paid_at = log.new_data?.paid_at || log.created_at
+          } else if (log.action === 'prolabore_reverted' && prolaboreMap.has(log.record_id)) {
+            const cur = prolaboreMap.get(log.record_id)
+            cur.payment_status = 'pending'
+            cur.paid_at = null
+          }
+        }
+      }
+
+      const rawEmployees = empRes.data || []
+      const processedEmployees = rawEmployees.map((emp: any) => {
+        const { notes: cleanNotes, payment_day } = parseEmployeeNotes(emp.notes)
+        return {
+          ...emp,
+          notes: cleanNotes,
+          raw_notes: emp.notes,
+          payment_day: emp.payment_day || payment_day || null,
+        }
+      })
+
+      // Filtrar prolabores: Pró-Labore é exclusivo para Fundadores
+      const founderIds = new Set(
+        processedEmployees.filter((e: any) => isFounderRole(e.role)).map((e: any) => e.id)
+      )
+      const validProlabores = Array.from(prolaboreMap.values()).filter((p: any) =>
+        founderIds.has(p.employee_id)
+      )
+
       return {
-        employees: empRes.data || [],
+        employees: processedEmployees,
         staffAssignments: staffRes.data || [],
         roles: rolesRes.data && rolesRes.data.length > 0 ? rolesRes.data : null,
-        prolabores: prolaboreRes.data || [],
+        prolabores: validProlabores,
         workEntries: Array.from(workMap.values()),
         tableCreated: !empRes.error || empRes.error.code !== 'PGRST205',
       }
@@ -160,6 +217,7 @@ export default async function FuncionariosPage() {
 
   // 3. Buscar categorias/funções de colaboradores (employee_roles + fallback audit_logs)
   const DEFAULT_ROLES = [
+    { id: 'role-0', name: 'Fundador(a)', default_daily_rate: 1500, description: 'Sócio / Fundador (Pró-Labore)' },
     { id: 'role-1', name: 'Garçom', default_daily_rate: 150 },
     { id: 'role-2', name: 'Cozinheiro(a)', default_daily_rate: 200 },
     { id: 'role-3', name: 'Auxiliar de Cozinha', default_daily_rate: 140 },

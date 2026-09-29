@@ -5,6 +5,8 @@ import { headers } from 'next/headers'
 import { revalidatePath } from 'next/cache'
 import { invalidateCache } from '@/lib/data-cache'
 
+import { parseEmployeeNotes, formatEmployeeNotes, isFounderRole } from './utils'
+
 export async function createEmployee(formData: FormData) {
   const headersList = await headers()
   const userId = headersList.get('x-user-id') || null
@@ -17,7 +19,10 @@ export async function createEmployee(formData: FormData) {
   const document = (formData.get('document') as string)?.trim() || null
   const pix_key = (formData.get('pix_key') as string)?.trim() || null
   const default_daily_rate = Number(formData.get('default_daily_rate')) || 0
-  const notes = (formData.get('notes') as string)?.trim() || null
+  const rawNotes = (formData.get('notes') as string)?.trim() || null
+  const paymentDayRaw = formData.get('payment_day')
+  const payment_day = paymentDayRaw && Number(paymentDayRaw) >= 1 && Number(paymentDayRaw) <= 31 ? Number(paymentDayRaw) : null
+  const notes = formatEmployeeNotes(rawNotes, payment_day)
 
   if (!name || !employeeRole) {
     return { error: 'O nome e a função do colaborador são obrigatórios.' }
@@ -26,7 +31,7 @@ export async function createEmployee(formData: FormData) {
   const employeeId = crypto.randomUUID()
   let tableExists = true
 
-  const { error } = await supabase.from('employees').insert({
+  const payload: any = {
     id: employeeId,
     name,
     role: employeeRole,
@@ -37,7 +42,18 @@ export async function createEmployee(formData: FormData) {
     active: true,
     notes,
     created_by: userId,
-  })
+  }
+  if (payment_day) {
+    payload.payment_day = payment_day
+  }
+
+  let { error } = await supabase.from('employees').insert(payload)
+
+  if (error && (error.code === '42703' || error.message?.includes('payment_day'))) {
+    delete payload.payment_day
+    const retry = await supabase.from('employees').insert(payload)
+    error = retry.error
+  }
 
   if (error) {
     if (error.code === 'PGRST205') {
@@ -65,6 +81,7 @@ export async function createEmployee(formData: FormData) {
         default_daily_rate,
         active: true,
         notes,
+        payment_day,
         createdAt: new Date().toISOString(),
       },
     })
@@ -92,7 +109,10 @@ export async function updateEmployee(formData: FormData) {
   const pix_key = (formData.get('pix_key') as string)?.trim() || null
   const default_daily_rate = Number(formData.get('default_daily_rate')) || 0
   const active = formData.get('active') === 'true'
-  const notes = (formData.get('notes') as string)?.trim() || null
+  const rawNotes = (formData.get('notes') as string)?.trim() || null
+  const paymentDayRaw = formData.get('payment_day')
+  const payment_day = paymentDayRaw && Number(paymentDayRaw) >= 1 && Number(paymentDayRaw) <= 31 ? Number(paymentDayRaw) : null
+  const notes = formatEmployeeNotes(rawNotes, payment_day)
 
   if (!id || !name || !employeeRole) {
     return { error: 'O ID, nome e função são obrigatórios.' }
@@ -112,6 +132,10 @@ export async function updateEmployee(formData: FormData) {
         notes,
       })
       .eq('id', id)
+
+    if (payment_day) {
+      await supabase.from('employees').update({ payment_day }).eq('id', id)
+    }
   } catch {}
 
   try {
@@ -129,6 +153,7 @@ export async function updateEmployee(formData: FormData) {
         default_daily_rate,
         active,
         notes,
+        payment_day,
         updatedAt: new Date().toISOString(),
       },
     })
@@ -582,6 +607,14 @@ export async function createProlabore(
     return { error: 'Colaborador, competência e valor são obrigatórios.' }
   }
 
+  // Validar se o colaborador possui cargo de Fundador
+  try {
+    const { data: emp } = await supabase.from('employees').select('id, name, role').eq('id', employee_id).maybeSingle()
+    if (emp && !isFounderRole(emp.role)) {
+      return { error: 'O Pró-Labore é exclusivo para colaboradores com o cargo de Fundador.' }
+    }
+  } catch {}
+
   const id = crypto.randomUUID()
 
   const { error } = await supabase.from('employee_prolabore').insert({
@@ -594,7 +627,7 @@ export async function createProlabore(
     created_by: userId,
   })
 
-  if (error) {
+  if (error && error.code !== 'PGRST205') {
     console.error('Erro ao criar pró-labore:', error)
     return { error: error.message }
   }
@@ -605,7 +638,7 @@ export async function createProlabore(
       table_name: 'employee_prolabore',
       record_id: id,
       user_id: userId,
-      new_data: { id, employee_id, competencia, amount, description },
+      new_data: { id, employee_id, competencia, amount, description, payment_status: 'pending' },
     })
   } catch {}
 
@@ -709,7 +742,6 @@ export async function payProlabore(
 
   const now = new Date().toISOString()
 
-  // 1. Buscar dados do pró-labore + colaborador
   let record: any = null
   try {
     const { data } = await supabase
@@ -719,6 +751,29 @@ export async function payProlabore(
       .maybeSingle()
     if (data) record = data
   } catch {}
+
+  if (!record) {
+    try {
+      const { data: logs } = await supabase
+        .from('audit_logs')
+        .select('*')
+        .eq('record_id', prolaboreId)
+        .order('created_at', { ascending: false })
+      if (logs && logs.length > 0) {
+        const createLog = logs.find((l: any) => l.action === 'prolabore_created') || logs[0]
+        const empId = createLog.new_data?.employee_id
+        let empName = 'Fundador(a)'
+        if (empId) {
+          const { data: empData } = await supabase.from('employees').select('name').eq('id', empId).maybeSingle()
+          if (empData) empName = empData.name
+        }
+        record = {
+          ...createLog.new_data,
+          employees: { name: empName },
+        }
+      }
+    } catch {}
+  }
 
   // 2. Marcar como pago
   try {
