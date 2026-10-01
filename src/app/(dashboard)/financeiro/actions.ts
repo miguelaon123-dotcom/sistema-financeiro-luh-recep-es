@@ -24,6 +24,71 @@ export async function createTransaction(formData: FormData) {
     return { error: 'Preencha a descrição, valor e data de vencimento.' }
   }
 
+  const installments = Math.max(1, parseInt(formData.get('installments') as string, 10) || 1)
+  const paidInstallments = Math.max(0, parseInt(formData.get('paid_installments') as string, 10) || 0)
+
+  if (installments > 1) {
+    const baseAmount = Math.floor((amount / installments) * 100) / 100
+    const remainder = Math.round((amount - baseAmount * installments) * 100) / 100
+
+    const payloads: Record<string, any>[] = []
+
+    const [yearStr, monthStr, dayStr] = due_date.split('-')
+    const baseYear = parseInt(yearStr, 10)
+    const baseMonth = parseInt(monthStr, 10) - 1
+    const baseDay = parseInt(dayStr, 10)
+
+    for (let i = 1; i <= installments; i++) {
+      const installmentAmount = i === 1 ? Math.round((baseAmount + remainder) * 100) / 100 : baseAmount
+      const isPaid = i <= paidInstallments
+      const installmentStatus = isPaid ? 'paid' : 'pending'
+
+      const targetDate = new Date(baseYear, baseMonth + (i - 1), baseDay)
+      const yyyy = targetDate.getFullYear()
+      const mm = String(targetDate.getMonth() + 1).padStart(2, '0')
+      const dd = String(targetDate.getDate()).padStart(2, '0')
+      const installmentDueDate = `${yyyy}-${mm}-${dd}`
+
+      payloads.push({
+        description: `${description} (${i}/${installments})`,
+        type,
+        amount: installmentAmount,
+        due_date: installmentDueDate,
+        status: installmentStatus,
+        contact_id: contact_id || null,
+        event_id: event_id || null,
+        paid_date: isPaid ? new Date().toISOString().split('T')[0] : null,
+        created_by: userId || null,
+      })
+    }
+
+    let { error } = await supabase.from('financial_transactions').insert(payloads)
+
+    if (
+      error &&
+      (error.code === 'PGRST204' ||
+        error.message?.includes('created_by') ||
+        error.details?.includes('created_by'))
+    ) {
+      const payloadsWithoutCreatedBy = payloads.map((p) => {
+        const { created_by, ...rest } = p
+        return rest
+      })
+      const retry = await supabase.from('financial_transactions').insert(payloadsWithoutCreatedBy)
+      error = retry.error
+    }
+
+    if (error) {
+      console.error('Erro ao criar parcelas da transação:', error)
+      return { error: error.message }
+    }
+
+    invalidateCache(['financeiro', 'dashboard', 'fornecedores'])
+    revalidatePath('/financeiro')
+    revalidatePath('/')
+    return { success: true }
+  }
+
   const insertPayload: Record<string, any> = {
     description,
     type,

@@ -100,6 +100,10 @@ export function FinanceiroClient({
       : null
   )
   const [editingTx, setEditingTx] = useState<Transaction | null>(null)
+  const [modalStatus, setModalStatus] = useState<'pending' | 'paid'>('pending')
+  const [modalAmount, setModalAmount] = useState<string>('')
+  const [modalInstallments, setModalInstallments] = useState<number>(1)
+  const [modalPaidInstallments, setModalPaidInstallments] = useState<number>(0)
   const [isPending, startTransition] = useTransition()
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
@@ -401,6 +405,11 @@ export function FinanceiroClient({
           <button
             onClick={() => {
               setErrorMessage(null)
+              setEditingTx(null)
+              setModalStatus('pending')
+              setModalAmount('')
+              setModalInstallments(1)
+              setModalPaidInstallments(0)
               setModalType('income')
             }}
             className="flex items-center space-x-1.5 rounded-xl bg-[#e8f8ee] px-3.5 py-2 text-xs font-semibold text-[#1a7f37] hover:bg-[#d5f3df] transition-all border border-[#b4e8c7] cursor-pointer"
@@ -411,6 +420,11 @@ export function FinanceiroClient({
           <button
             onClick={() => {
               setErrorMessage(null)
+              setEditingTx(null)
+              setModalStatus('pending')
+              setModalAmount('')
+              setModalInstallments(1)
+              setModalPaidInstallments(0)
               setModalType('expense')
             }}
             className="flex items-center space-x-1.5 rounded-xl bg-[#feeceb] px-3.5 py-2 text-xs font-semibold text-[#cf222e] hover:bg-[#fcd7d5] transition-all border border-[#f8b4b1] cursor-pointer"
@@ -921,6 +935,10 @@ export function FinanceiroClient({
                           onClick={() => {
                             setErrorMessage(null)
                             setEditingTx(tx)
+                            setModalStatus(tx.status === 'paid' ? 'paid' : 'pending')
+                            setModalAmount(String(Math.abs(Number(tx.amount))))
+                            setModalInstallments(1)
+                            setModalPaidInstallments(0)
                             setModalType(tx.type)
                           }}
                           className="rounded-lg p-1 text-[#86868b] hover:bg-[#f5f5f7] hover:text-[#1d1d1f] transition-colors cursor-pointer"
@@ -1041,7 +1059,8 @@ export function FinanceiroClient({
                     min="0.01"
                     name="amount"
                     required
-                    defaultValue={editingTx ? Math.abs(Number(editingTx.amount)) : ''}
+                    value={modalAmount}
+                    onChange={(e) => setModalAmount(e.target.value)}
                     placeholder="0,00"
                     className="w-full rounded-xl border border-[#d1d1d6] bg-white px-3.5 py-2 text-sm text-[#1d1d1f] placeholder-[#86868b] focus:border-[#1d1d1f] focus:outline-none focus:ring-1 focus:ring-[#1d1d1f] transition-all"
                   />
@@ -1049,7 +1068,9 @@ export function FinanceiroClient({
 
                 <div>
                   <label className="block text-xs font-semibold text-[#1d1d1f] mb-1">
-                    Data de Vencimento *
+                    {!editingTx && modalInstallments > 1
+                      ? 'Vencimento (1ª Parcela) *'
+                      : 'Data de Vencimento *'}
                   </label>
                   <input
                     type="date"
@@ -1103,33 +1124,141 @@ export function FinanceiroClient({
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-[#1d1d1f] mb-1">
-                  Status
-                </label>
-                <div className="grid grid-cols-2 gap-2">
-                  <label className="flex items-center justify-center gap-2 p-2 rounded-xl border border-[#e5e5ea] text-xs font-medium cursor-pointer has-checked:border-[#1d1d1f] has-checked:bg-[#f5f5f7]">
-                    <input
-                      type="radio"
-                      name="status"
-                      value="pending"
-                      defaultChecked={editingTx ? editingTx.status === 'pending' : true}
-                      className="accent-[#1d1d1f]"
-                    />
-                    <span>Pendente</span>
-                  </label>
-                  <label className="flex items-center justify-center gap-2 p-2 rounded-xl border border-[#e5e5ea] text-xs font-medium cursor-pointer has-checked:border-[#1d1d1f] has-checked:bg-[#f5f5f7]">
-                    <input
-                      type="radio"
-                      name="status"
-                      value="paid"
-                      defaultChecked={editingTx ? editingTx.status === 'paid' : false}
-                      className="accent-[#1d1d1f]"
-                    />
-                    <span>Já Liquidado (Pago)</span>
-                  </label>
+              {/* Condição de Pagamento e Status (100% Padrão dropdown, sem nenhum detalhe branco) */}
+              {!editingTx ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-[#1d1d1f] mb-1">
+                      Condição de Pagamento
+                    </label>
+                    <select
+                      name="installments"
+                      value={modalInstallments}
+                      onChange={(e) => {
+                        const count = Number(e.target.value)
+                        setModalInstallments(count)
+                        if (modalPaidInstallments > count) {
+                          setModalPaidInstallments(count)
+                        }
+                      }}
+                      className="w-full rounded-xl border border-[#d1d1d6] bg-white px-3.5 py-2 text-sm text-[#1d1d1f] focus:border-[#1d1d1f] focus:outline-none focus:ring-1 focus:ring-[#1d1d1f] transition-all font-medium"
+                    >
+                      <option value="1">À vista (1x Parcela única)</option>
+                      {[2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((n) => (
+                        <option key={n} value={n}>
+                          Parcelado em {n}x
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {modalInstallments === 1 ? (
+                    <div>
+                      <label className="block text-xs font-semibold text-[#1d1d1f] mb-1">
+                        Status do Pagamento
+                      </label>
+                      <select
+                        name="status"
+                        value={modalStatus}
+                        onChange={(e) => setModalStatus(e.target.value as 'pending' | 'paid')}
+                        className="w-full rounded-xl border border-[#d1d1d6] bg-white px-3.5 py-2 text-sm text-[#1d1d1f] focus:border-[#1d1d1f] focus:outline-none focus:ring-1 focus:ring-[#1d1d1f] transition-all font-medium"
+                      >
+                        <option value="pending">Pendente (A receber / A pagar)</option>
+                        <option value="paid">Já Liquidado (Pago)</option>
+                      </select>
+                      <input
+                        type="hidden"
+                        name="paid_installments"
+                        value={modalStatus === 'paid' ? '1' : '0'}
+                      />
+                    </div>
+                  ) : (
+                    <div>
+                      <label className="block text-xs font-semibold text-[#1d1d1f] mb-1">
+                        Parcelas Já Pagas
+                      </label>
+                      <select
+                        name="paid_installments"
+                        value={modalPaidInstallments}
+                        onChange={(e) => setModalPaidInstallments(Number(e.target.value))}
+                        className="w-full rounded-xl border border-[#d1d1d6] bg-white px-3.5 py-2 text-sm text-[#1d1d1f] focus:border-[#1d1d1f] focus:outline-none focus:ring-1 focus:ring-[#1d1d1f] transition-all font-medium"
+                      >
+                        <option value="0">0 parcelas pagas (Todas pendentes)</option>
+                        {Array.from({ length: modalInstallments }, (_, idx) => idx + 1).map((n) => (
+                          <option key={n} value={n}>
+                            {n === modalInstallments
+                              ? `${n} de ${modalInstallments} (Todas quitadas)`
+                              : `${n} de ${modalInstallments} ${n === 1 ? 'já paga' : 'já pagas'}`}
+                          </option>
+                        ))}
+                      </select>
+                      <input
+                        type="hidden"
+                        name="status"
+                        value={modalPaidInstallments === modalInstallments ? 'paid' : 'pending'}
+                      />
+                    </div>
+                  )}
                 </div>
-              </div>
+              ) : (
+                <div>
+                  <label className="block text-xs font-semibold text-[#1d1d1f] mb-1">
+                    Status do Lançamento
+                  </label>
+                  <select
+                    name="status"
+                    value={modalStatus}
+                    onChange={(e) => setModalStatus(e.target.value as 'pending' | 'paid')}
+                    className="w-full rounded-xl border border-[#d1d1d6] bg-white px-3.5 py-2 text-sm text-[#1d1d1f] focus:border-[#1d1d1f] focus:outline-none focus:ring-1 focus:ring-[#1d1d1f] transition-all font-medium"
+                  >
+                    <option value="pending">Pendente</option>
+                    <option value="paid">Já Liquidado (Pago)</option>
+                  </select>
+                </div>
+              )}
+
+              {/* Resumo quando parcelado */}
+              {!editingTx && modalInstallments > 1 && Number(modalAmount) > 0 && (
+                <div className="rounded-xl border border-[#e5e5ea] bg-[#fbfbfd] p-3 text-xs text-[#1d1d1f] space-y-1">
+                  <div className="font-semibold text-[#1d1d1f] flex items-center justify-between">
+                    <span>
+                      {modalInstallments}x de R${' '}
+                      {((parseFloat(modalAmount) || 0) / modalInstallments).toLocaleString('pt-BR', {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}
+                    </span>
+                    <span className="text-[#6e6e73]">
+                      Total: R${' '}
+                      {(parseFloat(modalAmount) || 0).toLocaleString('pt-BR', {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}
+                    </span>
+                  </div>
+                  <p className="text-[#6e6e73]">
+                    {modalPaidInstallments === 0 ? (
+                      `Todas as ${modalInstallments} parcelas mensais serão criadas como Pendentes.`
+                    ) : modalPaidInstallments === modalInstallments ? (
+                      <span className="text-[#1a7f37] font-medium">
+                        Todas as ${modalInstallments} parcelas mensais serão criadas como Já Pagas.
+                      </span>
+                    ) : (
+                      <>
+                        <span className="text-[#1a7f37] font-medium">
+                          {modalPaidInstallments}{' '}
+                          {modalPaidInstallments === 1 ? 'parcela criada como Paga' : 'parcelas criadas como Pagas'}
+                        </span>{' '}
+                        e{' '}
+                        <span className="text-[#b8860b] font-medium">
+                          {modalInstallments - modalPaidInstallments} parcela(s) pendente(s)
+                        </span>{' '}
+                        nos meses subsequentes.
+                      </>
+                    )}
+                  </p>
+                </div>
+              )}
 
               <div className="flex justify-end gap-2.5 pt-4 border-t border-[#f2f2f7]">
                 <button
