@@ -19,6 +19,7 @@ import {
   AlertTriangle,
   CheckCircle2,
   Info,
+  TrendingUp,
 } from 'lucide-react'
 import {
   Caixinha,
@@ -488,6 +489,50 @@ export function CaixinhasFinanceiras({
                       })}
                     </p>
                   </div>
+
+                  {/* Detalhes de Rendimento Automático 100% CDI Sicredi */}
+                  {caixinha.investment_info?.isInvestment && (
+                    <div className="mt-3 rounded-2xl bg-[#e8f8ee] border border-[#b4e8c7] p-3 text-xs text-[#1d1d1f] space-y-2 shadow-2xs">
+                      <div className="flex items-center justify-between">
+                        <span className="inline-flex items-center gap-1 font-bold text-[#1a7f37] text-xs">
+                          <TrendingUp size={14} />
+                          {caixinha.investment_info.bankName} {caixinha.investment_info.benchmark}
+                        </span>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white text-[#1a7f37] border border-[#b4e8c7]">
+                          Diário Automático
+                        </span>
+                      </div>
+
+                      <div className="space-y-1 pt-1 border-t border-[#b4e8c7]/50 text-[11px]">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[#6e6e73]">Total Aplicado:</span>
+                          <span className="font-semibold text-[#1d1d1f]">
+                            R$ {caixinha.investment_info.appliedAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-[#6e6e73]">Rendimento Acumulado:</span>
+                          <span className="font-bold text-[#1a7f37]">
+                            + R$ {caixinha.investment_info.accumulatedYield.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ({caixinha.investment_info.percentageYield}%)
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-[#6e6e73]">Rendimento / Dia Útil:</span>
+                          <span className="font-semibold text-[#1a7f37]">
+                            ~R$ {caixinha.investment_info.dailyYieldEstimate.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / dia
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between text-[#86868b] text-[10px] pt-0.5">
+                          <span>{caixinha.investment_info.businessDays} dias úteis</span>
+                          <span>Início: {new Date(caixinha.investment_info.startDate + 'T00:00:00').toLocaleDateString('pt-BR')}</span>
+                        </div>
+                      </div>
+
+                      <p className="text-[10px] text-[#1a7f37] font-medium bg-white/70 rounded-lg px-2 py-1 flex items-center gap-1">
+                        <span>⚡ Atualiza automaticamente todo dia útil (CDI {caixinha.investment_info.monthlyRate}% a.m.)</span>
+                      </p>
+                    </div>
+                  )}
                 </div>
 
                 {/* Barra de Progresso da Meta */}

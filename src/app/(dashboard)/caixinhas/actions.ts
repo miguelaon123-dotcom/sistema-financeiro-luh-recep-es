@@ -4,6 +4,7 @@ import { createAdminClient } from '@/lib/supabase/server'
 import { headers } from 'next/headers'
 import { revalidatePath } from 'next/cache'
 import { invalidateCache } from '@/lib/data-cache'
+import { calculateInvestmentYield, InvestmentYieldInfo } from './investment'
 
 export interface Caixinha {
   id: string
@@ -16,6 +17,16 @@ export interface Caixinha {
   notes?: string
   created_at?: string
   updated_at?: string
+  investment_config?: {
+    enabled: boolean
+    bank_name: string
+    benchmark: string
+    applied_amount: number
+    start_date: string
+    monthly_rate?: number
+    last_yield_date?: string
+  }
+  investment_info?: InvestmentYieldInfo
 }
 
 function isValidUuid(id: string): boolean {
@@ -106,6 +117,7 @@ export async function getCaixinhas(): Promise<Caixinha[]> {
               color: item.color === '#820ad1' ? '#1d1d1f' : (item.color || '#1d1d1f'),
               icon: item.icon || 'wallet',
               notes: item.notes || '',
+              investment_config: item.investment_config,
               created_at: item.created_at || log.created_at,
               updated_at: item.updated_at || log.created_at,
             }
@@ -115,10 +127,76 @@ export async function getCaixinhas(): Promise<Caixinha[]> {
     }
 
     const result = Object.values(map)
-    if (result.length === 0) {
-      return DEFAULT_CAIXINHAS
+    const rawList = result.length === 0 ? DEFAULT_CAIXINHAS : result
+
+    // Processamento e atualização automática do rendimento diário de investimentos (Sicredi 100% CDI)
+    const finalCaixinhas: Caixinha[] = []
+
+    for (const caixinha of rawList) {
+      const isInvestment =
+        caixinha.investment_config?.enabled ||
+        caixinha.name.toUpperCase().includes('INVESTIMENTO') ||
+        caixinha.category === 'investimento'
+
+      if (isInvestment) {
+        // Dados configurados ou valores padrão fornecidos pelo usuário
+        const appliedAmount =
+          caixinha.investment_config?.applied_amount ??
+          (caixinha.current_balance > 0 ? caixinha.current_balance : 2000)
+        const startDate = caixinha.investment_config?.start_date || '2026-09-28'
+        const bankName = caixinha.investment_config?.bank_name || 'Sicredi'
+        const benchmark = caixinha.investment_config?.benchmark || '100% CDI'
+        const monthlyRate = caixinha.investment_config?.monthly_rate || 1.08
+
+        const yieldInfo = calculateInvestmentYield({
+          appliedAmount,
+          startDate,
+          monthlyRate,
+          bankName,
+          benchmark,
+        })
+
+        const updated: Caixinha = {
+          ...caixinha,
+          current_balance: yieldInfo.currentBalance,
+          investment_config: {
+            enabled: true,
+            bank_name: bankName,
+            benchmark,
+            applied_amount: appliedAmount,
+            start_date: startDate,
+            monthly_rate: monthlyRate,
+            last_yield_date: yieldInfo.lastUpdateDate,
+          },
+          investment_info: yieldInfo,
+        }
+
+        // Se o saldo calculado difere do saldo armazenado ou a data de rendimento mudou, persiste de forma assíncrona
+        if (
+          Math.abs(caixinha.current_balance - yieldInfo.currentBalance) >= 0.009 ||
+          caixinha.investment_config?.last_yield_date !== yieldInfo.lastUpdateDate
+        ) {
+          supabase
+            .from('audit_logs')
+            .insert({
+              action: 'caixinha',
+              table_name: 'financial_caixinhas',
+              record_id: caixinha.id,
+              new_data: updated,
+            })
+            .then(() => {
+              invalidateCache(['caixinhas', 'financeiro', 'dashboard'])
+            })
+            .catch((err: any) => console.error('Erro ao sincronizar rendimento diário:', err))
+        }
+
+        finalCaixinhas.push(updated)
+      } else {
+        finalCaixinhas.push(caixinha)
+      }
     }
-    return result
+
+    return finalCaixinhas
   } catch (error) {
     console.error('Erro ao buscar caixinhas:', error)
     return DEFAULT_CAIXINHAS
