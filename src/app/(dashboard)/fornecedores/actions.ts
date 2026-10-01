@@ -121,7 +121,7 @@ export async function createSupplierExpense(formData: FormData) {
 
   const supabase = createAdminClient()
 
-  const supplier_id = formData.get('supplier_id') as string
+  const supplier_id = (formData.get('supplier_id') as string)?.trim() || null
   const description = (formData.get('description') as string)?.trim()
   const amount = Number(formData.get('amount'))
   const due_date = (formData.get('due_date') as string) || new Date().toISOString().split('T')[0]
@@ -129,13 +129,13 @@ export async function createSupplierExpense(formData: FormData) {
   const event_id = (formData.get('event_id') as string) || null
   const items_json = formData.get('items_json') as string
 
-  if (!supplier_id || !description || !amount || amount <= 0) {
-    return { error: 'Preencha o fornecedor, descrição e um valor válido.' }
+  if (!description || !amount || amount <= 0) {
+    return { error: 'Preencha a descrição e um valor válido.' }
   }
 
   const insertPayload: Record<string, any> = {
     type: 'expense',
-    contact_id: supplier_id,
+    contact_id: supplier_id || null,
     description: description,
     amount: amount,
     due_date: due_date,
@@ -214,7 +214,7 @@ export async function paySupplierExpense(id: string) {
 export async function updateSupplierExpense(formData: FormData) {
   const supabase = createAdminClient()
   const id = formData.get('id') as string
-  const supplier_id = formData.get('supplier_id') as string
+  const supplier_id = (formData.get('supplier_id') as string)?.trim() || null
   const description = (formData.get('description') as string)?.trim()
   const amount = Number(formData.get('amount'))
   const due_date = (formData.get('due_date') as string) || new Date().toISOString().split('T')[0]
@@ -222,12 +222,12 @@ export async function updateSupplierExpense(formData: FormData) {
   const event_id = (formData.get('event_id') as string) || null
   const items_json = formData.get('items_json') as string
 
-  if (!id || !supplier_id || !description || !amount || amount <= 0) {
-    return { error: 'Preencha o fornecedor, descrição e um valor válido.' }
+  if (!id || !description || !amount || amount <= 0) {
+    return { error: 'Preencha a descrição e um valor válido.' }
   }
 
   const updatePayload: Record<string, any> = {
-    contact_id: supplier_id,
+    contact_id: supplier_id || null,
     description: description,
     amount: amount,
     due_date: due_date,

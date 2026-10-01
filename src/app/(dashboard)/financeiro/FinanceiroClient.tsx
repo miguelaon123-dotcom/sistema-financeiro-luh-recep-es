@@ -2,9 +2,11 @@
 
 import { useState, useTransition, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import {
   ArrowUpCircle,
   ArrowDownCircle,
+  Zap,
   Search,
   Filter,
   CheckCircle2,
@@ -416,6 +418,13 @@ export function FinanceiroClient({
             <ArrowDownCircle size={15} strokeWidth={2.2} />
             <span>Nova Despesa</span>
           </button>
+          <Link
+            href="/fornecedores?action=nova-conta"
+            className="flex items-center space-x-1.5 rounded-xl bg-[#1d1d1f] px-3.5 py-2 text-xs font-semibold text-white hover:bg-black transition-all shadow-xs cursor-pointer"
+          >
+            <Zap size={14} className="text-amber-400 fill-amber-400" />
+            <span>+ Lançar Boleto Avulso</span>
+          </Link>
         </div>
       </div>
 
@@ -1066,7 +1075,7 @@ export function FinanceiroClient({
                     defaultValue={editingTx?.contacts?.id || ''}
                     className="w-full rounded-xl border border-[#d1d1d6] bg-white px-3.5 py-2 text-sm text-[#1d1d1f] focus:border-[#1d1d1f] focus:outline-none focus:ring-1 focus:ring-[#1d1d1f] transition-all"
                   >
-                    <option value="">Nenhum contato selecionado</option>
+                    <option value="">Fornecedor / Contato Avulso (Sem cadastro)</option>
                     {contacts.map((c) => (
                       <option key={c.id} value={c.id}>
                         {c.name}

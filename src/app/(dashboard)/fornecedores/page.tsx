@@ -33,7 +33,6 @@ export default async function FornecedoresPage({
             contacts(id, name), events(id, title)
           `)
           .eq('type', 'expense')
-          .not('contact_id', 'is', null)
           .order('due_date', { ascending: false }),
         supabase.from('events').select('id, title').order('event_date', { ascending: true }),
         getCaixinhas(),
@@ -41,7 +40,6 @@ export default async function FornecedoresPage({
 
       const rawTxs = (txsRes.data as any[]) || []
       const supplierTxs = rawTxs.filter((t: any) => {
-        if (!t.contact_id) return false
         const desc = (t.description || '').toLowerCase()
         if (
           desc.includes('ajuste de saldo') ||
