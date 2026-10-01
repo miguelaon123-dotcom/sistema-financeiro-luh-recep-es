@@ -26,40 +26,90 @@ export async function createTransaction(formData: FormData) {
 
   const installments = Math.max(1, parseInt(formData.get('installments') as string, 10) || 1)
   const paidInstallments = Math.max(0, parseInt(formData.get('paid_installments') as string, 10) || 0)
+  const customInstallmentsRaw = formData.get('custom_installments_json') as string
 
-  if (installments > 1) {
-    const baseAmount = Math.floor((amount / installments) * 100) / 100
-    const remainder = Math.round((amount - baseAmount * installments) * 100) / 100
+  let customInstallments: Array<{
+    number: number
+    amount: string | number
+    due_date?: string
+    status?: 'paid' | 'pending'
+  }> | null = null
 
+  if (customInstallmentsRaw) {
+    try {
+      const parsed = JSON.parse(customInstallmentsRaw)
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        customInstallments = parsed
+      }
+    } catch {
+      customInstallments = null
+    }
+  }
+
+  if (installments > 1 || (customInstallments && customInstallments.length > 1)) {
+    const totalInstCount = customInstallments ? customInstallments.length : installments
     const payloads: Record<string, any>[] = []
 
-    const [yearStr, monthStr, dayStr] = due_date.split('-')
-    const baseYear = parseInt(yearStr, 10)
-    const baseMonth = parseInt(monthStr, 10) - 1
-    const baseDay = parseInt(dayStr, 10)
+    const [yearStr, monthStr, dayStr] = (due_date || '').split('-')
+    const baseYear = parseInt(yearStr, 10) || new Date().getFullYear()
+    const baseMonth = (parseInt(monthStr, 10) || (new Date().getMonth() + 1)) - 1
+    const baseDay = parseInt(dayStr, 10) || new Date().getDate()
 
-    for (let i = 1; i <= installments; i++) {
-      const installmentAmount = i === 1 ? Math.round((baseAmount + remainder) * 100) / 100 : baseAmount
-      const isPaid = i <= paidInstallments
-      const installmentStatus = isPaid ? 'paid' : 'pending'
+    if (customInstallments && customInstallments.length > 0) {
+      for (let i = 0; i < customInstallments.length; i++) {
+        const item = customInstallments[i]
+        const num = i + 1
+        const instAmount = Number(item.amount) || 0
+        const isPaid = item.status === 'paid'
 
-      const targetDate = new Date(baseYear, baseMonth + (i - 1), baseDay)
-      const yyyy = targetDate.getFullYear()
-      const mm = String(targetDate.getMonth() + 1).padStart(2, '0')
-      const dd = String(targetDate.getDate()).padStart(2, '0')
-      const installmentDueDate = `${yyyy}-${mm}-${dd}`
+        let instDueDate = item.due_date
+        if (!instDueDate) {
+          const targetDate = new Date(baseYear, baseMonth + i, baseDay)
+          const yyyy = targetDate.getFullYear()
+          const mm = String(targetDate.getMonth() + 1).padStart(2, '0')
+          const dd = String(targetDate.getDate()).padStart(2, '0')
+          instDueDate = `${yyyy}-${mm}-${dd}`
+        }
 
-      payloads.push({
-        description: `${description} (${i}/${installments})`,
-        type,
-        amount: installmentAmount,
-        due_date: installmentDueDate,
-        status: installmentStatus,
-        contact_id: contact_id || null,
-        event_id: event_id || null,
-        paid_date: isPaid ? new Date().toISOString().split('T')[0] : null,
-        created_by: userId || null,
-      })
+        payloads.push({
+          description: `${description} (${num}/${totalInstCount})`,
+          type,
+          amount: instAmount,
+          due_date: instDueDate,
+          status: isPaid ? 'paid' : 'pending',
+          contact_id: contact_id || null,
+          event_id: event_id || null,
+          paid_date: isPaid ? new Date().toISOString().split('T')[0] : null,
+          created_by: userId || null,
+        })
+      }
+    } else {
+      const baseAmount = Math.floor((amount / installments) * 100) / 100
+      const remainder = Math.round((amount - baseAmount * installments) * 100) / 100
+
+      for (let i = 1; i <= installments; i++) {
+        const installmentAmount = i === 1 ? Math.round((baseAmount + remainder) * 100) / 100 : baseAmount
+        const isPaid = i <= paidInstallments
+        const installmentStatus = isPaid ? 'paid' : 'pending'
+
+        const targetDate = new Date(baseYear, baseMonth + (i - 1), baseDay)
+        const yyyy = targetDate.getFullYear()
+        const mm = String(targetDate.getMonth() + 1).padStart(2, '0')
+        const dd = String(targetDate.getDate()).padStart(2, '0')
+        const installmentDueDate = `${yyyy}-${mm}-${dd}`
+
+        payloads.push({
+          description: `${description} (${i}/${installments})`,
+          type,
+          amount: installmentAmount,
+          due_date: installmentDueDate,
+          status: installmentStatus,
+          contact_id: contact_id || null,
+          event_id: event_id || null,
+          paid_date: isPaid ? new Date().toISOString().split('T')[0] : null,
+          created_by: userId || null,
+        })
+      }
     }
 
     let { error } = await supabase.from('financial_transactions').insert(payloads)

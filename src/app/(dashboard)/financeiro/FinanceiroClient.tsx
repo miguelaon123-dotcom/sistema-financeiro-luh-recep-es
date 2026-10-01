@@ -102,8 +102,80 @@ export function FinanceiroClient({
   const [editingTx, setEditingTx] = useState<Transaction | null>(null)
   const [modalStatus, setModalStatus] = useState<'pending' | 'paid'>('pending')
   const [modalAmount, setModalAmount] = useState<string>('')
+  const [modalDueDate, setModalDueDate] = useState<string>(new Date().toISOString().split('T')[0])
   const [modalInstallments, setModalInstallments] = useState<number>(1)
   const [modalPaidInstallments, setModalPaidInstallments] = useState<number>(0)
+  const [customInstallments, setCustomInstallments] = useState<
+    Array<{ number: number; amount: string; due_date: string; status: 'pending' | 'paid' }>
+  >([])
+
+  const recalculateInstallments = (
+    count: number,
+    totalAmtStr: string,
+    baseDateStr: string,
+    paidCount: number
+  ) => {
+    if (count <= 1) {
+      setCustomInstallments([])
+      return
+    }
+
+    const totalAmt = parseFloat(totalAmtStr) || 0
+    const baseAmount = totalAmt > 0 ? Math.floor((totalAmt / count) * 100) / 100 : 0
+    const remainder = totalAmt > 0 ? Math.round((totalAmt - baseAmount * count) * 100) / 100 : 0
+
+    const [yearStr, monthStr, dayStr] = (baseDateStr || new Date().toISOString().split('T')[0]).split('-')
+    const baseYear = parseInt(yearStr, 10) || new Date().getFullYear()
+    const baseMonth = (parseInt(monthStr, 10) || (new Date().getMonth() + 1)) - 1
+    const baseDay = parseInt(dayStr, 10) || new Date().getDate()
+
+    const list: Array<{ number: number; amount: string; due_date: string; status: 'pending' | 'paid' }> = []
+    for (let i = 1; i <= count; i++) {
+      const targetDate = new Date(baseYear, baseMonth + (i - 1), baseDay)
+      const yyyy = targetDate.getFullYear()
+      const mm = String(targetDate.getMonth() + 1).padStart(2, '0')
+      const dd = String(targetDate.getDate()).padStart(2, '0')
+      const itemDueDate = `${yyyy}-${mm}-${dd}`
+
+      const instAmount = i === 1 ? Math.round((baseAmount + remainder) * 100) / 100 : baseAmount
+
+      list.push({
+        number: i,
+        amount: totalAmt > 0 ? (instAmount > 0 ? String(instAmount) : '') : '',
+        due_date: itemDueDate,
+        status: i <= paidCount ? 'paid' : 'pending',
+      })
+    }
+
+    setCustomInstallments(list)
+  }
+
+  const handleInstallmentAmountChange = (index: number, newAmt: string) => {
+    setCustomInstallments((prev) => {
+      const next = prev.map((item, i) => (i === index ? { ...item, amount: newAmt } : item))
+      const newTotal = next.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0)
+      if (newTotal > 0) {
+        setModalAmount(String(Math.round(newTotal * 100) / 100))
+      }
+      return next
+    })
+  }
+
+  const handleInstallmentStatusChange = (index: number, newStatus: 'pending' | 'paid') => {
+    setCustomInstallments((prev) => {
+      const next = prev.map((item, i) => (i === index ? { ...item, status: newStatus } : item))
+      const paidCount = next.filter((item) => item.status === 'paid').length
+      setModalPaidInstallments(paidCount)
+      return next
+    })
+  }
+
+  const handleInstallmentDateChange = (index: number, newDate: string) => {
+    setCustomInstallments((prev) =>
+      prev.map((item, i) => (i === index ? { ...item, due_date: newDate } : item))
+    )
+  }
+
   const [isPending, startTransition] = useTransition()
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
@@ -459,8 +531,10 @@ export function FinanceiroClient({
               setEditingTx(null)
               setModalStatus('pending')
               setModalAmount('')
+              setModalDueDate(new Date().toISOString().split('T')[0])
               setModalInstallments(1)
               setModalPaidInstallments(0)
+              setCustomInstallments([])
               setModalType('income')
             }}
             className="flex items-center space-x-1.5 rounded-xl bg-[#e8f8ee] px-3.5 py-2 text-xs font-semibold text-[#1a7f37] hover:bg-[#d5f3df] transition-all border border-[#b4e8c7] cursor-pointer"
@@ -474,8 +548,10 @@ export function FinanceiroClient({
               setEditingTx(null)
               setModalStatus('pending')
               setModalAmount('')
+              setModalDueDate(new Date().toISOString().split('T')[0])
               setModalInstallments(1)
               setModalPaidInstallments(0)
+              setCustomInstallments([])
               setModalType('expense')
             }}
             className="flex items-center space-x-1.5 rounded-xl bg-[#feeceb] px-3.5 py-2 text-xs font-semibold text-[#cf222e] hover:bg-[#fcd7d5] transition-all border border-[#f8b4b1] cursor-pointer"
@@ -1121,8 +1197,10 @@ export function FinanceiroClient({
                             setEditingTx(tx)
                             setModalStatus(tx.status === 'paid' ? 'paid' : 'pending')
                             setModalAmount(String(Math.abs(Number(tx.amount))))
+                            setModalDueDate(tx.due_date || new Date().toISOString().split('T')[0])
                             setModalInstallments(1)
                             setModalPaidInstallments(0)
+                            setCustomInstallments([])
                             setModalType(tx.type)
                           }}
                           className="rounded-lg p-1 text-[#86868b] hover:bg-[#f5f5f7] hover:text-[#1d1d1f] transition-colors cursor-pointer"
@@ -1291,9 +1369,15 @@ export function FinanceiroClient({
                     name="amount"
                     required
                     value={modalAmount}
-                    onChange={(e) => setModalAmount(e.target.value)}
+                    onChange={(e) => {
+                      const val = e.target.value
+                      setModalAmount(val)
+                      if (!editingTx && modalInstallments > 1) {
+                        recalculateInstallments(modalInstallments, val, modalDueDate, modalPaidInstallments)
+                      }
+                    }}
                     placeholder="0,00"
-                    className="w-full rounded-xl border border-[#d1d1d6] bg-white px-3.5 py-2 text-sm text-[#1d1d1f] placeholder-[#86868b] focus:border-[#1d1d1f] focus:outline-none focus:ring-1 focus:ring-[#1d1d1f] transition-all"
+                    className="w-full rounded-xl border border-[#d1d1d6] bg-white px-3.5 py-2 text-sm text-[#1d1d1f] placeholder-[#86868b] focus:border-[#1d1d1f] focus:outline-none focus:ring-1 focus:ring-[#1d1d1f] transition-all font-bold"
                   />
                 </div>
 
@@ -1307,11 +1391,14 @@ export function FinanceiroClient({
                     type="date"
                     name="due_date"
                     required
-                    defaultValue={
-                      editingTx?.due_date
-                        ? editingTx.due_date
-                        : new Date().toISOString().split('T')[0]
-                    }
+                    value={modalDueDate}
+                    onChange={(e) => {
+                      const dateVal = e.target.value
+                      setModalDueDate(dateVal)
+                      if (!editingTx && modalInstallments > 1) {
+                        recalculateInstallments(modalInstallments, modalAmount, dateVal, modalPaidInstallments)
+                      }
+                    }}
                     className="w-full rounded-xl border border-[#d1d1d6] bg-white px-3.5 py-2 text-sm text-[#1d1d1f] focus:border-[#1d1d1f] focus:outline-none focus:ring-1 focus:ring-[#1d1d1f] transition-all"
                   />
                 </div>
@@ -1357,80 +1444,193 @@ export function FinanceiroClient({
 
               {/* Condição de Pagamento e Status (100% Padrão dropdown, sem nenhum detalhe branco) */}
               {!editingTx ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-semibold text-[#1d1d1f] mb-1">
-                      Condição de Pagamento
-                    </label>
-                    <select
-                      name="installments"
-                      value={modalInstallments}
-                      onChange={(e) => {
-                        const count = Number(e.target.value)
-                        setModalInstallments(count)
-                        if (modalPaidInstallments > count) {
-                          setModalPaidInstallments(count)
-                        }
-                      }}
-                      className="w-full rounded-xl border border-[#d1d1d6] bg-white px-3.5 py-2 text-sm text-[#1d1d1f] focus:border-[#1d1d1f] focus:outline-none focus:ring-1 focus:ring-[#1d1d1f] transition-all font-medium"
-                    >
-                      <option value="1">À vista (1x Parcela única)</option>
-                      {[2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((n) => (
-                        <option key={n} value={n}>
-                          Parcelado em {n}x
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  {modalInstallments === 1 ? (
+                <>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className="block text-xs font-semibold text-[#1d1d1f] mb-1">
-                        Status do Pagamento
+                        Condição de Pagamento
                       </label>
                       <select
-                        name="status"
-                        value={modalStatus}
-                        onChange={(e) => setModalStatus(e.target.value as 'pending' | 'paid')}
+                        name="installments"
+                        value={modalInstallments}
+                        onChange={(e) => {
+                          const count = Number(e.target.value)
+                          setModalInstallments(count)
+                          const nextPaid = modalPaidInstallments > count ? count : modalPaidInstallments
+                          setModalPaidInstallments(nextPaid)
+                          recalculateInstallments(count, modalAmount, modalDueDate, nextPaid)
+                        }}
                         className="w-full rounded-xl border border-[#d1d1d6] bg-white px-3.5 py-2 text-sm text-[#1d1d1f] focus:border-[#1d1d1f] focus:outline-none focus:ring-1 focus:ring-[#1d1d1f] transition-all font-medium"
                       >
-                        <option value="pending">Pendente (A receber / A pagar)</option>
-                        <option value="paid">Já Liquidado (Pago)</option>
-                      </select>
-                      <input
-                        type="hidden"
-                        name="paid_installments"
-                        value={modalStatus === 'paid' ? '1' : '0'}
-                      />
-                    </div>
-                  ) : (
-                    <div>
-                      <label className="block text-xs font-semibold text-[#1d1d1f] mb-1">
-                        Parcelas Já Pagas
-                      </label>
-                      <select
-                        name="paid_installments"
-                        value={modalPaidInstallments}
-                        onChange={(e) => setModalPaidInstallments(Number(e.target.value))}
-                        className="w-full rounded-xl border border-[#d1d1d6] bg-white px-3.5 py-2 text-sm text-[#1d1d1f] focus:border-[#1d1d1f] focus:outline-none focus:ring-1 focus:ring-[#1d1d1f] transition-all font-medium"
-                      >
-                        <option value="0">0 parcelas pagas (Todas pendentes)</option>
-                        {Array.from({ length: modalInstallments }, (_, idx) => idx + 1).map((n) => (
+                        <option value="1">À vista (1x Parcela única)</option>
+                        {[2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((n) => (
                           <option key={n} value={n}>
-                            {n === modalInstallments
-                              ? `${n} de ${modalInstallments} (Todas quitadas)`
-                              : `${n} de ${modalInstallments} ${n === 1 ? 'já paga' : 'já pagas'}`}
+                            Parcelado em {n}x
                           </option>
                         ))}
                       </select>
+                    </div>
+
+                    {modalInstallments === 1 ? (
+                      <div>
+                        <label className="block text-xs font-semibold text-[#1d1d1f] mb-1">
+                          Status do Pagamento
+                        </label>
+                        <select
+                          name="status"
+                          value={modalStatus}
+                          onChange={(e) => setModalStatus(e.target.value as 'pending' | 'paid')}
+                          className="w-full rounded-xl border border-[#d1d1d6] bg-white px-3.5 py-2 text-sm text-[#1d1d1f] focus:border-[#1d1d1f] focus:outline-none focus:ring-1 focus:ring-[#1d1d1f] transition-all font-medium"
+                        >
+                          <option value="pending">Pendente (A receber / A pagar)</option>
+                          <option value="paid">Já Liquidado (Pago)</option>
+                        </select>
+                        <input
+                          type="hidden"
+                          name="paid_installments"
+                          value={modalStatus === 'paid' ? '1' : '0'}
+                        />
+                      </div>
+                    ) : (
+                      <div>
+                        <label className="block text-xs font-semibold text-[#1d1d1f] mb-1">
+                          Parcelas Já Pagas
+                        </label>
+                        <select
+                          name="paid_installments"
+                          value={modalPaidInstallments}
+                          onChange={(e) => {
+                            const paidCount = Number(e.target.value)
+                            setModalPaidInstallments(paidCount)
+                            setCustomInstallments((prev) =>
+                              prev.map((item) => ({
+                                ...item,
+                                status: item.number <= paidCount ? 'paid' : 'pending',
+                              }))
+                            )
+                          }}
+                          className="w-full rounded-xl border border-[#d1d1d6] bg-white px-3.5 py-2 text-sm text-[#1d1d1f] focus:border-[#1d1d1f] focus:outline-none focus:ring-1 focus:ring-[#1d1d1f] transition-all font-medium"
+                        >
+                          <option value="0">0 parcelas pagas (Todas pendentes)</option>
+                          {Array.from({ length: modalInstallments }, (_, idx) => idx + 1).map((n) => (
+                            <option key={n} value={n}>
+                              {n === modalInstallments
+                                ? `${n} de ${modalInstallments} (Todas quitadas)`
+                                : `${n} de ${modalInstallments} ${n === 1 ? 'já paga' : 'já pagas'}`}
+                            </option>
+                          ))}
+                        </select>
+                        <input
+                          type="hidden"
+                          name="status"
+                          value={modalPaidInstallments === modalInstallments ? 'paid' : 'pending'}
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Edição e Escolha do Valor de Cada Parcela */}
+                  {modalInstallments > 1 && (
+                    <div className="rounded-2xl border border-[#d2d2d7] bg-[#fbfbfd] p-3.5 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-[#1d1d1f]">
+                          Valores e Vencimentos das Parcelas:
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            recalculateInstallments(
+                              modalInstallments,
+                              modalAmount,
+                              modalDueDate,
+                              modalPaidInstallments
+                            )
+                          }
+                          className="text-[11px] font-semibold text-[#0071e3] hover:underline cursor-pointer"
+                        >
+                          Dividir Igualmente
+                        </button>
+                      </div>
+
+                      <p className="text-[11px] text-[#6e6e73]">
+                        Você pode escolher e digitar o valor exato de cada parcela livremente (ex: se o cliente pagou uma entrada maior ou valores diferentes):
+                      </p>
+
+                      <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                        {customInstallments.map((inst, idx) => (
+                          <div
+                            key={inst.number}
+                            className={`p-2.5 rounded-xl border text-xs flex flex-wrap sm:flex-nowrap items-center gap-2 transition-all ${
+                              inst.status === 'paid'
+                                ? 'bg-[#e8f8ee]/60 border-[#b4e8c7]'
+                                : 'bg-white border-[#d2d2d7]'
+                            }`}
+                          >
+                            <span className="font-bold text-[#1d1d1f] w-16 shrink-0">
+                              {inst.number}ª Parcela:
+                            </span>
+
+                            <div className="relative flex-1 min-w-[100px]">
+                              <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-[#86868b] font-medium">
+                                R$
+                              </span>
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0.01"
+                                required
+                                value={inst.amount}
+                                onChange={(e) => handleInstallmentAmountChange(idx, e.target.value)}
+                                placeholder="0,00"
+                                className="w-full rounded-lg border border-[#d1d1d6] bg-white py-1.5 pl-8 pr-2.5 text-xs font-bold text-[#1d1d1f] focus:border-[#1d1d1f] focus:outline-none"
+                              />
+                            </div>
+
+                            <input
+                              type="date"
+                              value={inst.due_date}
+                              onChange={(e) => handleInstallmentDateChange(idx, e.target.value)}
+                              className="rounded-lg border border-[#d1d1d6] bg-white px-2 py-1.5 text-xs text-[#1d1d1f] focus:border-[#1d1d1f] focus:outline-none shrink-0"
+                            />
+
+                            <select
+                              value={inst.status}
+                              onChange={(e) =>
+                                handleInstallmentStatusChange(idx, e.target.value as 'pending' | 'paid')
+                              }
+                              className={`rounded-lg border px-2.5 py-1.5 text-xs font-semibold focus:outline-none shrink-0 cursor-pointer ${
+                                inst.status === 'paid'
+                                  ? 'border-[#b4e8c7] bg-[#e8f8ee] text-[#1a7f37]'
+                                  : 'border-[#d1d1d6] bg-white text-[#6e6e73]'
+                              }`}
+                            >
+                              <option value="pending">Pendente</option>
+                              <option value="paid">Já Paga</option>
+                            </select>
+                          </div>
+                        ))}
+                      </div>
+
                       <input
                         type="hidden"
-                        name="status"
-                        value={modalPaidInstallments === modalInstallments ? 'paid' : 'pending'}
+                        name="custom_installments_json"
+                        value={JSON.stringify(customInstallments)}
                       />
+
+                      <div className="pt-2 border-t border-[#e5e5ea] flex items-center justify-between text-xs">
+                        <span className="text-[#6e6e73]">
+                          Soma total das {modalInstallments} parcelas:
+                        </span>
+                        <strong className="text-sm font-extrabold text-[#1d1d1f]">
+                          R${' '}
+                          {customInstallments
+                            .reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0)
+                            .toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </strong>
+                      </div>
                     </div>
                   )}
-                </div>
+                </>
               ) : (
                 <div>
                   <label className="block text-xs font-semibold text-[#1d1d1f] mb-1">
@@ -1445,49 +1645,6 @@ export function FinanceiroClient({
                     <option value="pending">Pendente</option>
                     <option value="paid">Já Liquidado (Pago)</option>
                   </select>
-                </div>
-              )}
-
-              {/* Resumo quando parcelado */}
-              {!editingTx && modalInstallments > 1 && Number(modalAmount) > 0 && (
-                <div className="rounded-xl border border-[#e5e5ea] bg-[#fbfbfd] p-3 text-xs text-[#1d1d1f] space-y-1">
-                  <div className="font-semibold text-[#1d1d1f] flex items-center justify-between">
-                    <span>
-                      {modalInstallments}x de R${' '}
-                      {((parseFloat(modalAmount) || 0) / modalInstallments).toLocaleString('pt-BR', {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      })}
-                    </span>
-                    <span className="text-[#6e6e73]">
-                      Total: R${' '}
-                      {(parseFloat(modalAmount) || 0).toLocaleString('pt-BR', {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      })}
-                    </span>
-                  </div>
-                  <p className="text-[#6e6e73]">
-                    {modalPaidInstallments === 0 ? (
-                      `Todas as ${modalInstallments} parcelas mensais serão criadas como Pendentes.`
-                    ) : modalPaidInstallments === modalInstallments ? (
-                      <span className="text-[#1a7f37] font-medium">
-                        Todas as ${modalInstallments} parcelas mensais serão criadas como Já Pagas.
-                      </span>
-                    ) : (
-                      <>
-                        <span className="text-[#1a7f37] font-medium">
-                          {modalPaidInstallments}{' '}
-                          {modalPaidInstallments === 1 ? 'parcela criada como Paga' : 'parcelas criadas como Pagas'}
-                        </span>{' '}
-                        e{' '}
-                        <span className="text-[#b8860b] font-medium">
-                          {modalInstallments - modalPaidInstallments} parcela(s) pendente(s)
-                        </span>{' '}
-                        nos meses subsequentes.
-                      </>
-                    )}
-                  </p>
                 </div>
               )}
 
