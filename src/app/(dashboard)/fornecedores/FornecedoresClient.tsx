@@ -139,9 +139,6 @@ export function FornecedoresClient({
   const [editingBill, setEditingBill] = useState<SupplierTransaction | null>(null)
   const [selectedSupplierForBill, setSelectedSupplierForBill] = useState<string>('')
   const [billInitialStatus, setBillInitialStatus] = useState<'pending' | 'paid'>('pending')
-  const [billEntryMode, setBillEntryMode] = useState<'quick' | 'detailed'>('quick')
-  const [billBarcode, setBillBarcode] = useState('')
-  const [billPlaceName, setBillPlaceName] = useState('')
 
   // Estado dos Itens / Produtos da Conta (Boleto)
   const [billItems, setBillItems] = useState<BillItem[]>([
@@ -188,17 +185,14 @@ export function FornecedoresClient({
 
   // Sincroniza automaticamente o total quando houver itens calculados
   useEffect(() => {
-    if (calculatedItemsTotal > 0 && billEntryMode === 'detailed') {
+    if (calculatedItemsTotal > 0) {
       setBillTotalAmount(calculatedItemsTotal.toFixed(2))
     }
-  }, [calculatedItemsTotal, billEntryMode])
+  }, [calculatedItemsTotal])
 
-  const resetBillForm = (supplierId = '', mode: 'quick' | 'detailed' = 'quick') => {
+  const resetBillForm = (supplierId = '') => {
     setEditingBill(null)
     setSelectedSupplierForBill(supplierId)
-    setBillEntryMode(mode)
-    setBillBarcode('')
-    setBillPlaceName('')
     setBillItems([
       { id: crypto.randomUUID(), name: '', quantity: '1', unit: 'cx', unit_price: '', customUnit: '' },
     ])
@@ -216,23 +210,6 @@ export function FornecedoresClient({
 
     let desc = tx.description || ''
     let generalDesc = ''
-
-    // Tentar extrair código de barras caso exista
-    const barcodeMatch = desc.match(/\(Cód:\s*([^\)]+)\)/i)
-    if (barcodeMatch) {
-      setBillBarcode(barcodeMatch[1].trim())
-      desc = desc.replace(/\(Cód:\s*[^\)]+\)/i, '').trim()
-    } else {
-      setBillBarcode('')
-    }
-
-    // Tentar extrair local/estabelecimento caso exista (ex: "(Supermercado Central)")
-    const placeMatch = desc.match(/\(Local:\s*([^\)]+)\)/i) || desc.match(/\((Mercado[^\)]+)\)/i)
-    if (placeMatch) {
-      setBillPlaceName(placeMatch[1].trim())
-    } else {
-      setBillPlaceName('')
-    }
 
     // Tentar separar título geral caso exista (ex: "Título Geral: 10 cx - Heineken")
     const colonIdx = desc.indexOf(': ')
@@ -290,14 +267,6 @@ export function FornecedoresClient({
       })
     }
 
-    // Se tiver mais de 1 item formatado com regex de insumos, abre no modo detalhado; senão modo rápido
-    if (parsedItems.length > 1 || (parsedItems.length === 1 && desc.match(itemRegex))) {
-      setBillEntryMode('detailed')
-    } else {
-      setBillEntryMode('quick')
-      setBillGeneralDescription(generalDesc || desc)
-    }
-
     setBillItems(parsedItems)
     setBillModalOpen(true)
   }
@@ -333,11 +302,10 @@ export function FornecedoresClient({
     return doc
   }
 
-  // Filtrar apenas despesas legítimas ligadas a fornecedores
+  // Filtrar apenas despesas legítimas ligadas a fornecedores ou compras avulsas
   const supplierTxs = useMemo(() => {
     return (transactions || []).filter((t) => {
       if (t.type !== 'expense') return false
-      if (!t.contact_id) return false
       const desc = (t.description || '').toLowerCase()
       if (
         desc.includes('ajuste de saldo') ||
@@ -618,70 +586,45 @@ export function FornecedoresClient({
     const rawSupplierId = (formData.get('supplier_id') as string) || selectedSupplierForBill
     const supplierId = rawSupplierId && rawSupplierId !== 'avulso' ? rawSupplierId.trim() : ''
 
+    const validItems = billItems.filter((i) => i.name.trim() !== '')
+
     let finalDescription = ''
-    let finalAmount = 0
-    let validItems: BillItem[] = []
+    let descPrefix = billGeneralDescription.trim()
 
-    if (billEntryMode === 'quick') {
-      const cleanDesc = billGeneralDescription.trim()
-      if (!cleanDesc) {
-        setErrorMessage('Informe a descrição ou o que foi comprado.')
-        return
-      }
-      const manualAmount = parseFloat(billTotalAmount.replace(',', '.'))
-      if (isNaN(manualAmount) || manualAmount <= 0) {
-        setErrorMessage('Informe um valor a pagar válido para a compra/boleto.')
-        return
-      }
-      finalAmount = manualAmount
-      let descWithPlace = cleanDesc
-      if (!supplierId && billPlaceName.trim()) {
-        descWithPlace = `${cleanDesc} (${billPlaceName.trim()})`
-      }
-      finalDescription = billBarcode.trim()
-        ? `${descWithPlace} (Cód: ${billBarcode.trim()})`
-        : descWithPlace
-    } else {
-      // Montar descrição com itens detalhados (quantidade, unidade, nome e valor unitário)
-      validItems = billItems.filter((i) => i.name.trim() !== '')
+    if (validItems.length > 0) {
+      const formattedItems = validItems.map((item) => {
+        const u = item.unit === 'outro' && item.customUnit ? item.customUnit.trim() : item.unit
+        const q = item.quantity.trim() || '1'
+        const unitPriceNum = parseFloat(item.unit_price.replace(',', '.'))
+        const priceInfo =
+          !isNaN(unitPriceNum) && unitPriceNum > 0
+            ? ` (R$ ${unitPriceNum.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}/${u})`
+            : ''
+        return `${q} ${u} - ${item.name.trim()}${priceInfo}`
+      })
 
-      let descPrefix = billGeneralDescription.trim()
-
-      if (validItems.length > 0) {
-        const formattedItems = validItems.map((item) => {
-          const u = item.unit === 'outro' && item.customUnit ? item.customUnit.trim() : item.unit
-          const q = item.quantity.trim() || '1'
-          const unitPriceNum = parseFloat(item.unit_price.replace(',', '.'))
-          const priceInfo =
-            !isNaN(unitPriceNum) && unitPriceNum > 0
-              ? ` (R$ ${unitPriceNum.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}/${u})`
-              : ''
-          return `${q} ${u} - ${item.name.trim()}${priceInfo}`
-        })
-
-        const itemsSummary = formattedItems.join(' • ')
-        if (descPrefix) {
-          finalDescription = `${descPrefix}: ${itemsSummary}`
-        } else {
-          finalDescription = itemsSummary
-        }
+      const itemsSummary = formattedItems.join(' • ')
+      if (descPrefix) {
+        finalDescription = `${descPrefix}: ${itemsSummary}`
       } else {
-        finalDescription = descPrefix
+        finalDescription = itemsSummary
       }
+    } else {
+      finalDescription = descPrefix
+    }
 
-      if (!finalDescription) {
-        setErrorMessage('Informe a descrição do boleto ou adicione ao menos um produto/item.')
-        return
-      }
+    if (!finalDescription) {
+      setErrorMessage('Informe a descrição do boleto ou adicione ao menos um produto/item.')
+      return
+    }
 
-      // Determinar valor total: se o input manual tiver valor válido usa ele, senão usa a soma calculada dos itens
-      const manualAmount = parseFloat(billTotalAmount.replace(',', '.'))
-      finalAmount = !isNaN(manualAmount) && manualAmount > 0 ? manualAmount : calculatedItemsTotal
+    // Determinar valor total: se o input manual tiver valor válido usa ele, senão usa a soma calculada dos itens
+    const manualAmount = parseFloat(billTotalAmount.replace(',', '.'))
+    const finalAmount = !isNaN(manualAmount) && manualAmount > 0 ? manualAmount : calculatedItemsTotal
 
-      if (!finalAmount || finalAmount <= 0) {
-        setErrorMessage('Informe o valor a pagar do boleto ou o preço dos itens adicionados.')
-        return
-      }
+    if (!finalAmount || finalAmount <= 0) {
+      setErrorMessage('Informe o valor a pagar do boleto ou o preço dos itens adicionados.')
+      return
     }
 
     if (supplierId) {
@@ -770,13 +713,13 @@ export function FornecedoresClient({
           <button
             onClick={() => {
               setErrorMessage(null)
-              resetBillForm('', 'quick')
+              resetBillForm('')
               setBillModalOpen(true)
             }}
             className="flex items-center space-x-1.5 rounded-xl bg-[#1d1d1f] px-3.5 py-2 text-xs font-semibold text-white hover:bg-black transition-all shadow-xs active:scale-[0.98] cursor-pointer"
           >
-            <Zap size={14} className="text-amber-400 fill-amber-400" />
-            <span>+ Lançar Boleto Avulso</span>
+            <Plus size={15} strokeWidth={2} />
+            <span>Lançar Boleto / Conta</span>
           </button>
 
           <button
@@ -1225,13 +1168,13 @@ export function FornecedoresClient({
                   type="button"
                   onClick={() => {
                     setErrorMessage(null)
-                    resetBillForm(supplierFilter !== 'all' ? supplierFilter : '', 'quick')
+                    resetBillForm(supplierFilter !== 'all' ? supplierFilter : '')
                     setBillModalOpen(true)
                   }}
                   className="px-3 py-1.5 text-xs font-bold rounded-xl bg-[#1d1d1f] hover:bg-black text-white transition-all shadow-xs cursor-pointer flex items-center gap-1.5 ml-auto"
                 >
-                  <Zap size={13} className="text-amber-400 fill-amber-400" />
-                  <span>+ Lançar Boleto Avulso</span>
+                  <Plus size={13} />
+                  <span>+ Lançar Conta</span>
                 </button>
               </div>
             </div>
@@ -1672,12 +1615,12 @@ export function FornecedoresClient({
                         <button
                           onClick={() => {
                             setErrorMessage(null)
-                            resetBillForm(s.id, 'quick')
+                            resetBillForm(s.id)
                             setBillModalOpen(true)
                           }}
                           className="flex-1 flex items-center justify-center gap-1.5 rounded-xl bg-[#1d1d1f] hover:bg-black py-2.5 text-xs font-bold text-white transition-all shadow-xs cursor-pointer"
                         >
-                          <Zap size={14} className="text-amber-400 fill-amber-400" />
+                          <Plus size={14} />
                           <span>+ Lançar Boleto</span>
                         </button>
 
@@ -1849,11 +1792,11 @@ export function FornecedoresClient({
                 </div>
                 <div>
                   <h3 className="text-lg font-bold text-[#1d1d1f]">
-                    {editingBill ? 'Editar Boleto / Conta' : 'Lançar Boleto / Conta'}
+                    {editingBill ? 'Editar Conta / Boleto' : 'Lançar Conta / Boleto'}
                   </h3>
                   <p className="text-xs text-[#6e6e73]">
-                    {billEntryMode === 'quick'
-                      ? 'Lançamento rápido de boleto avulso ou despesa operacional.'
+                    {editingBill
+                      ? 'Altere produtos, quantidades, unidades, fornecedor ou vencimento.'
                       : 'Cadastre despesas com múltiplos produtos, insumos e unidades de medida.'}
                   </p>
                 </div>
@@ -1876,34 +1819,6 @@ export function FornecedoresClient({
               </div>
             )}
 
-            {/* Alternador de Modo: Boleto Avulso (Rápido) vs Detalhado */}
-            <div className="mt-4 flex items-center rounded-2xl bg-[#f5f5f7] p-1 border border-[#e5e5ea] shrink-0">
-              <button
-                type="button"
-                onClick={() => setBillEntryMode('quick')}
-                className={`flex-1 flex items-center justify-center gap-2 py-2 text-xs font-bold rounded-xl transition-all cursor-pointer ${
-                  billEntryMode === 'quick'
-                    ? 'bg-white text-[#1d1d1f] shadow-xs ring-1 ring-black/5'
-                    : 'text-[#6e6e73] hover:text-[#1d1d1f]'
-                }`}
-              >
-                <Zap size={14} className={billEntryMode === 'quick' ? 'text-amber-500 fill-amber-500' : ''} />
-                <span>⚡ Boleto Avulso (Rápido)</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setBillEntryMode('detailed')}
-                className={`flex-1 flex items-center justify-center gap-2 py-2 text-xs font-bold rounded-xl transition-all cursor-pointer ${
-                  billEntryMode === 'detailed'
-                    ? 'bg-white text-[#1d1d1f] shadow-xs ring-1 ring-black/5'
-                    : 'text-[#6e6e73] hover:text-[#1d1d1f]'
-                }`}
-              >
-                <Package size={14} />
-                <span>📋 Detalhado com Itens de Insumo</span>
-              </button>
-            </div>
-
             {/* Conteúdo rolável */}
             <form
               key={editingBill ? editingBill.id : 'new-bill'}
@@ -1912,147 +1827,7 @@ export function FornecedoresClient({
             >
               {editingBill && <input type="hidden" name="id" value={editingBill.id} />}
 
-              {billEntryMode === 'quick' ? (
-                /* MODO RÁPIDO / AVULSO */
-                <div className="space-y-4">
-                  {/* Fornecedor (Opcional) e Vencimento */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <div className="flex items-center justify-between mb-1">
-                        <label className="text-xs font-semibold text-[#1d1d1f]">
-                          Fornecedor (Opcional)
-                        </label>
-                        <span className="text-[10px] text-[#16a34a] font-bold">
-                          ✓ Sem cadastro obrigatório
-                        </span>
-                      </div>
-                      <select
-                        name="supplier_id"
-                        value={selectedSupplierForBill}
-                        onChange={(e) => setSelectedSupplierForBill(e.target.value)}
-                        className="w-full rounded-xl border border-[#d1d1d6] bg-white px-3.5 py-2.5 text-xs sm:text-sm text-[#1d1d1f] focus:border-[#1d1d1f] focus:outline-none focus:ring-1 focus:ring-[#1d1d1f] transition-all font-medium"
-                      >
-                        <option value="">Fornecedor Avulso (Sem cadastro)</option>
-                        {localSuppliers.map((s) => (
-                          <option key={s.id} value={s.id}>
-                            🏢 {s.name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-semibold text-[#1d1d1f] mb-1">
-                        Data {billInitialStatus === 'paid' ? 'do Pagamento' : 'de Vencimento'} *
-                      </label>
-                      <input
-                        type="date"
-                        name="due_date"
-                        required
-                        defaultValue={editingBill ? editingBill.due_date : new Date().toISOString().split('T')[0]}
-                        className="w-full rounded-xl border border-[#d1d1d6] bg-white px-3.5 py-2.5 text-xs sm:text-sm text-[#1d1d1f] focus:border-[#1d1d1f] focus:outline-none focus:ring-1 focus:ring-[#1d1d1f] transition-all"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Nome do Mercado ou Estabelecimento (se for sem cadastro) */}
-                  {!selectedSupplierForBill && (
-                    <div className="rounded-2xl bg-[#f0f7ff] p-3 border border-[#d0e1fd] space-y-1">
-                      <label className="block text-xs font-bold text-[#0071e3]">
-                        🏪 Onde comprou? (Opcional - Ex: Mercado da Cidade, Padaria, Açougue)
-                      </label>
-                      <input
-                        type="text"
-                        placeholder="Ex: Mercado da Cidade Vizinha (não cria fornecedor na sua lista)"
-                        value={billPlaceName}
-                        onChange={(e) => setBillPlaceName(e.target.value)}
-                        className="w-full rounded-xl border border-[#b4d5fe] bg-white px-3 py-1.5 text-xs text-[#1d1d1f] placeholder-[#86868b] focus:border-[#0071e3] focus:outline-none"
-                      />
-                      <span className="text-[10px] text-[#0071e3]/80 block">
-                        ✨ Perfeito para imprevistos fora da cidade: salva o gasto sem poluir sua lista de fornecedores!
-                      </span>
-                    </div>
-                  )}
-
-                  {/* Descrição e Valor */}
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <div className="sm:col-span-2">
-                      <label className="block text-xs font-semibold text-[#1d1d1f] mb-1">
-                        O que foi comprado / Descrição *
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        placeholder="Ex: Gelo, limão e descartáveis que faltaram na festa..."
-                        value={billGeneralDescription}
-                        onChange={(e) => setBillGeneralDescription(e.target.value)}
-                        className="w-full rounded-xl border border-[#d1d1d6] bg-white px-3.5 py-2.5 text-xs sm:text-sm text-[#1d1d1f] placeholder-[#86868b] focus:border-[#1d1d1f] focus:outline-none focus:ring-1 focus:ring-[#1d1d1f] transition-all"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-semibold text-[#1d1d1f] mb-1">
-                        Valor Pago / a Pagar (R$) *
-                      </label>
-                      <div className="relative">
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-[#86868b]">
-                          R$
-                        </span>
-                        <input
-                          type="number"
-                          step="0.01"
-                          min="0.01"
-                          name="amount"
-                          required
-                          placeholder="0,00"
-                          value={billTotalAmount}
-                          onChange={(e) => setBillTotalAmount(e.target.value)}
-                          className="w-full rounded-xl border border-[#d1d1d6] bg-white pl-9 pr-3.5 py-2.5 text-xs sm:text-sm font-bold text-[#1d1d1f] placeholder-[#86868b] focus:border-[#1d1d1f] focus:outline-none focus:ring-1 focus:ring-[#1d1d1f] transition-all"
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Vincular à Festa / Evento */}
-                  <div>
-                    <label className="block text-xs font-semibold text-[#1d1d1f] mb-1 flex items-center justify-between">
-                      <span>Vincular à Festa / Evento (Opcional)</span>
-                      <span className="text-[10px] text-[#6e6e73]">
-                        Entra no fechamento financeiro desta festa
-                      </span>
-                    </label>
-                    <select
-                      name="event_id"
-                      defaultValue={editingBill?.event_id || ''}
-                      className="w-full rounded-xl border border-[#d1d1d6] bg-white px-3.5 py-2 text-xs sm:text-sm text-[#1d1d1f] focus:border-[#1d1d1f] focus:outline-none focus:ring-1 focus:ring-[#1d1d1f] transition-all"
-                    >
-                      <option value="">Nenhum evento vinculado (Despesa Geral da Empresa)</option>
-                      {events.map((ev) => (
-                        <option key={ev.id} value={ev.id}>
-                          🎉 {ev.title}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  {/* Linha Digitável / Código de Barras (Opcional) */}
-                  <div>
-                    <label className="block text-xs font-semibold text-[#1d1d1f] mb-1 flex items-center gap-1.5">
-                      <Barcode size={14} className="text-[#6e6e73]" />
-                      <span>Código de Barras / Linha Digitável do Boleto (Opcional)</span>
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="Cole aqui caso seja boleto bancário..."
-                      value={billBarcode}
-                      onChange={(e) => setBillBarcode(e.target.value)}
-                      className="w-full rounded-xl border border-[#d1d1d6] bg-white px-3.5 py-2 text-xs sm:text-sm font-mono text-[#1d1d1f] placeholder-[#86868b] focus:border-[#1d1d1f] focus:outline-none focus:ring-1 focus:ring-[#1d1d1f] transition-all"
-                    />
-                  </div>
-                </div>
-              ) : (
-                /* MODO DETALHADO COM INSUMOS */
-                <div className="space-y-4">
+              <div className="space-y-4">
                   {/* Fornecedor e Vencimento */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
@@ -2283,7 +2058,6 @@ export function FornecedoresClient({
                     </div>
                   </div>
                 </div>
-              )}
 
               {/* Status Inicial da Conta */}
               <div>
@@ -2393,18 +2167,9 @@ export function FornecedoresClient({
                 <button
                   type="submit"
                   disabled={isPending}
-                  className="rounded-xl bg-[#cf222e] hover:bg-[#a41a24] text-white px-5 py-2 text-xs font-semibold transition-all shadow-xs cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
+                  className="rounded-xl bg-[#cf222e] hover:bg-[#a41a24] text-white px-5 py-2 text-xs font-semibold transition-all shadow-xs cursor-pointer disabled:opacity-50"
                 >
-                  {billEntryMode === 'quick' && !editingBill && <Zap size={14} className="text-amber-300 fill-amber-300" />}
-                  <span>
-                    {isPending
-                      ? 'Salvando...'
-                      : editingBill
-                      ? 'Salvar Alterações'
-                      : billEntryMode === 'quick'
-                      ? 'Gravar Boleto Avulso'
-                      : 'Gravar Conta / Boleto'}
-                  </span>
+                  {isPending ? 'Salvando...' : editingBill ? 'Salvar Alterações' : 'Gravar Conta / Boleto'}
                 </button>
               </div>
             </form>

@@ -422,8 +422,8 @@ export function FinanceiroClient({
             href="/fornecedores?action=nova-conta"
             className="flex items-center space-x-1.5 rounded-xl bg-[#1d1d1f] px-3.5 py-2 text-xs font-semibold text-white hover:bg-black transition-all shadow-xs cursor-pointer"
           >
-            <Zap size={14} className="text-amber-400 fill-amber-400" />
-            <span>+ Lançar Boleto Avulso</span>
+            <Receipt size={14} />
+            <span>Lançar Boleto / Conta</span>
           </Link>
         </div>
       </div>
@@ -1068,14 +1068,14 @@ export function FinanceiroClient({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-[#1d1d1f] mb-1">
-                    Contato / Cliente Vinculado
+                    {modalType === 'expense' ? 'Fornecedor' : 'Cliente'}
                   </label>
                   <select
                     name="contact_id"
                     defaultValue={editingTx?.contacts?.id || ''}
-                    className="w-full rounded-xl border border-[#d1d1d6] bg-white px-3.5 py-2 text-sm text-[#1d1d1f] focus:border-[#1d1d1f] focus:outline-none focus:ring-1 focus:ring-[#1d1d1f] transition-all"
+                    className="w-full rounded-xl border border-[#d1d1d6] bg-white px-3.5 py-2 text-sm text-[#1d1d1f] focus:border-[#1d1d1f] focus:outline-none focus:ring-1 focus:ring-[#1d1d1f] transition-all font-medium"
                   >
-                    <option value="">Fornecedor / Contato Avulso (Sem cadastro)</option>
+                    <option value="">{modalType === 'expense' ? 'Fornecedor Avulso (Sem cadastro)' : 'Cliente Avulso (Sem cadastro)'}</option>
                     {contacts.map((c) => (
                       <option key={c.id} value={c.id}>
                         {c.name}
