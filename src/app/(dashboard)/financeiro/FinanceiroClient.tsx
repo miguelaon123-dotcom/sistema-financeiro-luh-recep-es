@@ -269,14 +269,21 @@ export function FinanceiroClient({
 
   // Filtragem e Ordenação Inteligente
   const filteredTransactions = useMemo(() => {
+    const term = searchTerm.toLowerCase().trim()
+
     return localTransactions
       .filter((tx) => {
-        const matchesSearch =
-          tx.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          tx.contacts?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          tx.events?.title?.toLowerCase().includes(searchTerm.toLowerCase())
+        if (term) {
+          const descMatch = (tx.description || '').toLowerCase().includes(term)
+          const contactMatch = (tx.contacts?.name || '').toLowerCase().includes(term)
+          const eventMatch = (tx.events?.title || '').toLowerCase().includes(term)
+          const amountMatch = String(tx.amount || '').includes(term) || String(Math.abs(Number(tx.amount || 0))).includes(term)
+          const dateMatch = (tx.due_date || '').includes(term) || (tx.paid_date || '').includes(term)
 
-        if (!matchesSearch) return false
+          if (!descMatch && !contactMatch && !eventMatch && !amountMatch && !dateMatch) {
+            return false
+          }
+        }
 
         // Filtro por Mês e Ano usando getTransactionDate
         const effectiveDate = getTransactionDate(tx)
@@ -290,7 +297,11 @@ export function FinanceiroClient({
         if (filterStatus === 'all') return true
         if (filterStatus === 'income') return tx.type === 'income'
         if (filterStatus === 'expense') return tx.type === 'expense'
-        if (filterStatus === 'tasting') return tx.description?.toLowerCase().includes('degustação')
+        if (filterStatus === 'tasting') {
+          const desc = (tx.description || '').toLowerCase()
+          const event = (tx.events?.title || '').toLowerCase()
+          return desc.includes('degust') || event.includes('degust')
+        }
         if (filterStatus === 'pending') return tx.status === 'pending'
         if (filterStatus === 'paid') return tx.status === 'paid'
         return true
@@ -301,6 +312,46 @@ export function FinanceiroClient({
         return dateB.localeCompare(dateA)
       })
   }, [localTransactions, searchTerm, filterStatus, selectedMonth, selectedYear, dateFilterMode])
+
+  // Totais dos Lançamentos Filtrados pela Busca e Abas (Soma do que o usuário está buscando)
+  const filteredMetrics = useMemo(() => {
+    let incomeTotal = 0
+    let expenseTotal = 0
+    let pendingIncome = 0
+    let pendingExpense = 0
+    let paidIncome = 0
+    let paidExpense = 0
+
+    for (const tx of filteredTransactions) {
+      const amt = Number(tx.amount || 0)
+      if (tx.type === 'income') {
+        incomeTotal += amt
+        if (tx.status === 'paid') paidIncome += amt
+        else if (tx.status === 'pending') pendingIncome += amt
+      } else {
+        expenseTotal += amt
+        if (tx.status === 'paid') paidExpense += amt
+        else if (tx.status === 'pending') pendingExpense += amt
+      }
+    }
+
+    const netTotal = incomeTotal - expenseTotal
+    const paidNet = paidIncome - paidExpense
+    const pendingNet = pendingIncome - pendingExpense
+
+    return {
+      count: filteredTransactions.length,
+      incomeTotal,
+      expenseTotal,
+      netTotal,
+      paidIncome,
+      paidExpense,
+      paidNet,
+      pendingIncome,
+      pendingExpense,
+      pendingNet,
+    }
+  }, [filteredTransactions])
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
@@ -786,15 +837,25 @@ export function FinanceiroClient({
         /* Transactions Table Section */
         <div className="rounded-2xl border border-[#e5e5ea] bg-white shadow-xs overflow-hidden">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-[#f2f2f7] p-4 gap-3">
-          <div className="relative w-full max-w-sm">
+          <div className="relative w-full max-w-md">
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-[#86868b]" />
             <input
               type="text"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Buscar por descrição, cliente, evento ou degustação..."
-              className="w-full rounded-xl border border-transparent bg-[#f5f5f7] py-2 pl-10 pr-3.5 text-sm text-[#1d1d1f] placeholder-[#86868b] focus:border-[#d1d1d6] focus:bg-white focus:outline-none transition-all"
+              placeholder="Buscar por gasolina, mercado, cliente, fornecedor..."
+              className="w-full rounded-xl border border-transparent bg-[#f5f5f7] py-2 pl-10 pr-9 text-sm text-[#1d1d1f] placeholder-[#86868b] focus:border-[#d1d1d6] focus:bg-white focus:outline-none transition-all"
             />
+            {searchTerm && (
+              <button
+                type="button"
+                onClick={() => setSearchTerm('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-lg p-1 text-[#86868b] hover:bg-[#e5e5ea] hover:text-[#1d1d1f] transition-colors cursor-pointer"
+                title="Limpar busca"
+              >
+                <X size={15} />
+              </button>
+            )}
           </div>
 
           {/* Filtros em abas */}
@@ -822,16 +883,139 @@ export function FinanceiroClient({
           </div>
         </div>
 
-        {/* Barra de Status e Informações do Período no Extrato */}
+        {/* Card de Destaque com a Soma Total quando há pesquisa digitada (ex: gasolina) */}
+        {searchTerm ? (
+          <div className="mx-4 my-3 p-3.5 rounded-2xl bg-[#f5f5f7] border border-[#d2d2d7] flex flex-col md:flex-row md:items-center justify-between gap-3 animate-in fade-in duration-150">
+            <div className="flex items-center gap-3">
+              <div className="rounded-xl bg-[#1d1d1f] p-2 text-white shadow-2xs">
+                <Search size={16} />
+              </div>
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs font-bold text-[#1d1d1f]">
+                    Busca: &ldquo;{searchTerm}&rdquo;
+                  </span>
+                  <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-white border border-[#d2d2d7] text-[#1d1d1f]">
+                    {filteredMetrics.count} {filteredMetrics.count === 1 ? 'lançamento encontrado' : 'lançamentos encontrados'}
+                  </span>
+                  <span className="text-[11px] text-[#6e6e73]">
+                    Período: <strong>{periodLabel}</strong>
+                  </span>
+                </div>
+                <p className="text-xs text-[#6e6e73] mt-0.5">
+                  Soma de todos os lançamentos encontrados na busca.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2.5">
+              {filteredMetrics.expenseTotal > 0 && (
+                <div className="rounded-xl bg-white px-3.5 py-1.5 border border-[#f8b4b1] shadow-2xs">
+                  <span className="text-[10px] font-semibold text-[#cf222e] uppercase block">Total Gasto (Despesas)</span>
+                  <span className="text-sm font-extrabold text-[#cf222e]">
+                    R$ {filteredMetrics.expenseTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                </div>
+              )}
+
+              {filteredMetrics.incomeTotal > 0 && (
+                <div className="rounded-xl bg-white px-3.5 py-1.5 border border-[#b4e8c7] shadow-2xs">
+                  <span className="text-[10px] font-semibold text-[#1a7f37] uppercase block">Total Recebido (Receitas)</span>
+                  <span className="text-sm font-extrabold text-[#1a7f37]">
+                    R$ {filteredMetrics.incomeTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                </div>
+              )}
+
+              {filteredMetrics.expenseTotal > 0 && filteredMetrics.incomeTotal > 0 && (
+                <div className="rounded-xl bg-white px-3.5 py-1.5 border border-[#d2d2d7] shadow-2xs">
+                  <span className="text-[10px] font-semibold text-[#6e6e73] uppercase block">Saldo da Busca</span>
+                  <span className={`text-sm font-extrabold ${filteredMetrics.netTotal >= 0 ? 'text-[#1a7f37]' : 'text-[#cf222e]'}`}>
+                    R$ {filteredMetrics.netTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={() => setSearchTerm('')}
+                className="px-2.5 py-1 rounded-lg text-xs font-semibold text-[#6e6e73] hover:text-[#1d1d1f] hover:bg-white border border-transparent hover:border-[#d2d2d7] transition-all cursor-pointer"
+              >
+                Limpar busca
+              </button>
+            </div>
+          </div>
+        ) : null}
+
+        {/* Barra de Status e Informações do Período no Extrato com Somas Totais */}
         <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 bg-[#fbfbfd] border-b border-[#f2f2f7]">
-          <div className="flex items-center gap-2 text-xs text-[#1d1d1f] font-semibold">
-            <Receipt size={14} className="text-[#0071e3]" />
-            <span>Extrato Filtrado: <strong>{periodLabel}</strong></span>
+          <div className="flex flex-wrap items-center gap-2.5 text-xs text-[#1d1d1f]">
+            <div className="flex items-center gap-1.5 font-semibold">
+              <Receipt size={14} className="text-[#0071e3]" />
+              <span>Extrato: <strong>{periodLabel}</strong></span>
+            </div>
+            <span className="text-[#d1d1d6]">•</span>
+            <span className="text-[#6e6e73]">
+              Aba: <strong className="text-[#1d1d1f]">{
+                filterStatus === 'all' ? 'Todos' :
+                filterStatus === 'income' ? 'Receitas' :
+                filterStatus === 'expense' ? 'Despesas' :
+                filterStatus === 'tasting' ? 'Degustações' :
+                filterStatus === 'pending' ? 'Pendentes' : 'Pagos'
+              }</strong>
+            </span>
+            <span className="text-[#d1d1d6]">•</span>
+            <span className="text-[#6e6e73]">
+              <strong>{filteredMetrics.count}</strong> de {localTransactions.length} lançamentos
+            </span>
           </div>
 
-          <span className="text-xs text-[#86868b]">
-            Exibindo <strong>{filteredTransactions.length}</strong> de {localTransactions.length} lançamentos
-          </span>
+          {/* Valores Totais Somados da Visualização Atual */}
+          <div className="flex flex-wrap items-center gap-2.5 text-xs font-semibold">
+            {filterStatus === 'expense' ? (
+              <span className="text-[#cf222e] bg-[#feeceb] px-2.5 py-1 rounded-lg border border-[#f8b4b1]">
+                Total de Despesas: R$ {filteredMetrics.expenseTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+            ) : filterStatus === 'income' ? (
+              <span className="text-[#1a7f37] bg-[#e8f8ee] px-2.5 py-1 rounded-lg border border-[#b4e8c7]">
+                Total de Receitas: R$ {filteredMetrics.incomeTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+            ) : filterStatus === 'tasting' ? (
+              <span className="text-[#1d1d1f] bg-[#f5f5f7] px-2.5 py-1 rounded-lg border border-[#d2d2d7]">
+                Total Degustações: R$ {(filteredMetrics.incomeTotal + filteredMetrics.expenseTotal).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+            ) : filterStatus === 'pending' ? (
+              <div className="flex items-center gap-2">
+                <span className="text-[#b8860b] bg-[#fff8e6] px-2.5 py-1 rounded-lg border border-[#fbe4a0]">
+                  A Receber: R$ {filteredMetrics.pendingIncome.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+                <span className="text-[#cf222e] bg-[#feeceb] px-2.5 py-1 rounded-lg border border-[#f8b4b1]">
+                  A Pagar: R$ {filteredMetrics.pendingExpense.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+              </div>
+            ) : filterStatus === 'paid' ? (
+              <div className="flex items-center gap-2">
+                <span className="text-[#1a7f37] bg-[#e8f8ee] px-2.5 py-1 rounded-lg border border-[#b4e8c7]">
+                  Recebido: R$ {filteredMetrics.paidIncome.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+                <span className="text-[#cf222e] bg-[#feeceb] px-2.5 py-1 rounded-lg border border-[#f8b4b1]">
+                  Pago: R$ {filteredMetrics.paidExpense.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <span className="text-[#1a7f37]">
+                  Receitas: R$ {filteredMetrics.incomeTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+                <span className="text-[#cf222e]">
+                  Despesas: R$ {filteredMetrics.expenseTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+                <span className={`px-2 py-0.5 rounded-lg border ${filteredMetrics.netTotal >= 0 ? 'bg-[#e8f8ee] text-[#1a7f37] border-[#b4e8c7]' : 'bg-[#feeceb] text-[#cf222e] border-[#f8b4b1]'}`}>
+                  Líquido: R$ {filteredMetrics.netTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="overflow-x-auto">
@@ -966,6 +1150,53 @@ export function FinanceiroClient({
                 </tr>
               )}
             </tbody>
+            {filteredTransactions.length > 0 && (
+              <tfoot className="bg-[#f9f9fb] border-t-2 border-[#e5e5ea]">
+                <tr>
+                  <td colSpan={4} className="px-5 py-3.5 text-left text-xs font-bold text-[#1d1d1f]">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="uppercase tracking-wider">Soma Total</span>
+                      <span className="font-normal text-[#6e6e73]">
+                        ({filteredMetrics.count} {filteredMetrics.count === 1 ? 'item' : 'itens'}
+                        {searchTerm ? ` para "${searchTerm}"` : ''})
+                      </span>
+                    </div>
+                  </td>
+                  <td className="px-5 py-3.5 text-right whitespace-nowrap">
+                    {filterStatus === 'expense' ? (
+                      <span className="text-sm font-extrabold text-[#cf222e]">
+                        - R$ {filteredMetrics.expenseTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
+                    ) : filterStatus === 'income' ? (
+                      <span className="text-sm font-extrabold text-[#1a7f37]">
+                        + R$ {filteredMetrics.incomeTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
+                    ) : filterStatus === 'tasting' ? (
+                      <span className="text-sm font-extrabold text-[#1d1d1f]">
+                        R$ {(filteredMetrics.incomeTotal + filteredMetrics.expenseTotal).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
+                    ) : (
+                      <div className="flex flex-col items-end">
+                        {filteredMetrics.expenseTotal > 0 && (
+                          <span className="text-xs font-semibold text-[#cf222e]">
+                            Despesas: R$ {filteredMetrics.expenseTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </span>
+                        )}
+                        {filteredMetrics.incomeTotal > 0 && (
+                          <span className="text-xs font-semibold text-[#1a7f37]">
+                            Receitas: R$ {filteredMetrics.incomeTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </span>
+                        )}
+                        <span className={`text-sm font-extrabold ${filteredMetrics.netTotal >= 0 ? 'text-[#1a7f37]' : 'text-[#cf222e]'}`}>
+                          Líquido: R$ {filteredMetrics.netTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </span>
+                      </div>
+                    )}
+                  </td>
+                  <td colSpan={2}></td>
+                </tr>
+              </tfoot>
+            )}
           </table>
         </div>
       </div>
