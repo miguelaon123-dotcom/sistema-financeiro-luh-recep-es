@@ -21,6 +21,13 @@ const BRAZILIAN_BANK_HOLIDAYS = new Set([
   '2027-01-01',
 ])
 
+export interface InvestmentContribution {
+  /** Data do aporte/resgate (YYYY-MM-DD) */
+  date: string
+  /** Valor positivo = aporte, negativo = resgate */
+  amount: number
+}
+
 export interface InvestmentYieldInfo {
   isInvestment: boolean
   bankName: string
@@ -98,13 +105,22 @@ export function countBusinessDays(startDateStr: string, endDateStr: string): num
 export function calculateInvestmentYield(params: {
   appliedAmount: number
   startDate: string
+  /** Lista de aportes/resgates. Se informada, substitui appliedAmount/startDate no cálculo. */
+  contributions?: InvestmentContribution[]
   monthlyRate?: number
   bankName?: string
   benchmark?: string
   currentDateStr?: string
 }): InvestmentYieldInfo {
-  const appliedAmount = Math.max(0, params.appliedAmount)
   const startDate = params.startDate || '2026-09-28'
+  const contributions: InvestmentContribution[] =
+    params.contributions && params.contributions.length > 0
+      ? params.contributions
+      : [{ date: startDate, amount: Math.max(0, params.appliedAmount) }]
+  const appliedAmount = Math.max(
+    0,
+    Math.round(contributions.reduce((acc, c) => acc + Number(c.amount || 0), 0) * 100) / 100
+  )
   const monthlyRate = params.monthlyRate || 1.08
   const bankName = params.bankName || 'Sicredi'
   const benchmark = params.benchmark || '100% CDI'
@@ -123,10 +139,15 @@ export function calculateInvestmentYield(params: {
   const totalDays = Math.max(0, Math.floor((endMs - startMs) / (1000 * 60 * 60 * 24)))
 
   // Cálculo dos juros compostos diários em dias úteis
+  // Cada aporte/resgate rende (ou deixa de render) a partir da sua própria data (D+1)
   let accumulatedYield = 0
-  if (appliedAmount > 0 && businessDays > 0) {
-    accumulatedYield = appliedAmount * (Math.pow(1 + dailyRate, businessDays) - 1)
+  for (const c of contributions) {
+    const days = countBusinessDays(c.date, todayStr)
+    if (days > 0) {
+      accumulatedYield += Number(c.amount || 0) * (Math.pow(1 + dailyRate, days) - 1)
+    }
   }
+  if (appliedAmount <= 0) accumulatedYield = Math.max(0, accumulatedYield)
 
   // Arredondamento bancário a 2 casas decimais
   accumulatedYield = Math.round(accumulatedYield * 100) / 100
