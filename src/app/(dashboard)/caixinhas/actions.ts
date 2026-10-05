@@ -398,6 +398,12 @@ export async function editCaixinhaBalance(formData: FormData) {
   const updated: Caixinha = {
     ...existing,
     current_balance: newBalance,
+    investment_config: existing.investment_config
+      ? {
+          ...existing.investment_config,
+          applied_amount: newBalance,
+        }
+      : undefined,
     updated_at: new Date().toISOString(),
   }
 
@@ -449,6 +455,12 @@ export async function depositToCaixinha(formData: FormData) {
   const updated: Caixinha = {
     ...existing,
     current_balance: existing.current_balance + amount,
+    investment_config: existing.investment_config
+      ? {
+          ...existing.investment_config,
+          applied_amount: (existing.investment_config.applied_amount || existing.current_balance) + amount,
+        }
+      : undefined,
     updated_at: new Date().toISOString(),
   }
 
@@ -474,7 +486,6 @@ export async function depositToCaixinha(formData: FormData) {
     due_date: today,
     paid_date: today,
     description: `Transferência para Caixinha: ${existing.name}`,
-    created_by: userId || null,
   })
 
   invalidateCache()
@@ -514,6 +525,15 @@ export async function withdrawFromCaixinha(formData: FormData) {
   const updated: Caixinha = {
     ...existing,
     current_balance: existing.current_balance - amount,
+    investment_config: existing.investment_config
+      ? {
+          ...existing.investment_config,
+          applied_amount: Math.max(
+            0,
+            (existing.investment_config.applied_amount || existing.current_balance) - amount
+          ),
+        }
+      : undefined,
     updated_at: new Date().toISOString(),
   }
 
@@ -539,7 +559,6 @@ export async function withdrawFromCaixinha(formData: FormData) {
     due_date: today,
     paid_date: today,
     description: `Resgate da Caixinha: ${existing.name}`,
-    created_by: userId || null,
   })
 
   invalidateCache()
