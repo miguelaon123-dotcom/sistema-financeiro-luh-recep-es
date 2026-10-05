@@ -4,12 +4,7 @@ import { createAdminClient } from '@/lib/supabase/server'
 import { headers } from 'next/headers'
 import { revalidatePath } from 'next/cache'
 import { invalidateCache } from '@/lib/data-cache'
-import {
-  calculateInvestmentYield,
-  getBrasiliaDateString,
-  InvestmentContribution,
-  InvestmentYieldInfo,
-} from './investment'
+import { calculateInvestmentYield, InvestmentYieldInfo } from './investment'
 
 export interface Caixinha {
   id: string
@@ -30,67 +25,12 @@ export interface Caixinha {
     start_date: string
     monthly_rate?: number
     last_yield_date?: string
-    contributions?: InvestmentContribution[]
   }
   investment_info?: InvestmentYieldInfo
 }
 
 function isValidUuid(id: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)
-}
-
-/**
- * Para caixinhas de investimento, o saldo é recalculado a partir dos aportes.
- * Por isso, todo depósito/resgate/ajuste precisa atualizar a lista de aportes,
- * senão o recálculo automático sobrescreve o novo saldo.
- */
-function applyInvestmentMovement(
-  caixinha: Caixinha,
-  movement: { type: 'deposit' | 'withdraw' | 'set'; amount: number }
-): Caixinha {
-  const cfg = caixinha.investment_config
-  if (!cfg?.enabled) return caixinha
-
-  const today = getBrasiliaDateString()
-  let contributions: InvestmentContribution[] =
-    cfg.contributions && cfg.contributions.length > 0
-      ? [...cfg.contributions]
-      : [{ date: cfg.start_date, amount: Number(cfg.applied_amount || 0) }]
-
-  if (movement.type === 'deposit') {
-    contributions.push({ date: today, amount: movement.amount })
-  } else if (movement.type === 'withdraw') {
-    const remaining = caixinha.current_balance - movement.amount
-    if (remaining <= 0.01) {
-      contributions = []
-    } else {
-      contributions.push({ date: today, amount: -movement.amount })
-    }
-  } else {
-    // Ajuste direto: o novo saldo passa a ser a base aplicada a partir de hoje
-    contributions = movement.amount > 0 ? [{ date: today, amount: movement.amount }] : []
-  }
-
-  const yieldInfo = calculateInvestmentYield({
-    appliedAmount: 0,
-    startDate: cfg.start_date,
-    contributions,
-    monthlyRate: cfg.monthly_rate,
-    bankName: cfg.bank_name,
-    benchmark: cfg.benchmark,
-  })
-
-  return {
-    ...caixinha,
-    current_balance: yieldInfo.currentBalance,
-    investment_config: {
-      ...cfg,
-      applied_amount: yieldInfo.appliedAmount,
-      contributions,
-      last_yield_date: yieldInfo.lastUpdateDate,
-    },
-    investment_info: yieldInfo,
-  }
 }
 
 const DEFAULT_CAIXINHAS: Caixinha[] = [
@@ -207,14 +147,10 @@ export async function getCaixinhas(): Promise<Caixinha[]> {
         const bankName = caixinha.investment_config?.bank_name || 'Sicredi'
         const benchmark = caixinha.investment_config?.benchmark || '100% CDI'
         const monthlyRate = caixinha.investment_config?.monthly_rate || 1.08
-        const contributions: InvestmentContribution[] =
-          caixinha.investment_config?.contributions ??
-          (appliedAmount > 0 ? [{ date: startDate, amount: appliedAmount }] : [])
 
         const yieldInfo = calculateInvestmentYield({
           appliedAmount,
           startDate,
-          contributions,
           monthlyRate,
           bankName,
           benchmark,
@@ -227,11 +163,10 @@ export async function getCaixinhas(): Promise<Caixinha[]> {
             enabled: true,
             bank_name: bankName,
             benchmark,
-            applied_amount: yieldInfo.appliedAmount,
+            applied_amount: appliedAmount,
             start_date: startDate,
             monthly_rate: monthlyRate,
             last_yield_date: yieldInfo.lastUpdateDate,
-            contributions,
           },
           investment_info: yieldInfo,
         }
@@ -460,14 +395,11 @@ export async function editCaixinhaBalance(formData: FormData) {
     }
   }
 
-  const updated: Caixinha = applyInvestmentMovement(
-    {
-      ...existing,
-      current_balance: newBalance,
-      updated_at: new Date().toISOString(),
-    },
-    { type: 'set', amount: newBalance }
-  )
+  const updated: Caixinha = {
+    ...existing,
+    current_balance: newBalance,
+    updated_at: new Date().toISOString(),
+  }
 
   const supabase = createAdminClient()
   const { error } = await supabase.from('audit_logs').insert({
@@ -514,14 +446,11 @@ export async function depositToCaixinha(formData: FormData) {
     }
   }
 
-  const updated: Caixinha = applyInvestmentMovement(
-    {
-      ...existing,
-      current_balance: existing.current_balance + amount,
-      updated_at: new Date().toISOString(),
-    },
-    { type: 'deposit', amount }
-  )
+  const updated: Caixinha = {
+    ...existing,
+    current_balance: existing.current_balance + amount,
+    updated_at: new Date().toISOString(),
+  }
 
   const supabase = createAdminClient()
   const { error } = await supabase.from('audit_logs').insert({
@@ -538,15 +467,15 @@ export async function depositToCaixinha(formData: FormData) {
 
   // Registrar saída da conta bancária para a caixinha
   const today = new Date().toISOString().split('T')[0]
-  const { error: txError } = await supabase.from('financial_transactions').insert({
+  await supabase.from('financial_transactions').insert({
     type: 'expense',
     amount: amount,
     status: 'paid',
     due_date: today,
     paid_date: today,
     description: `Transferência para Caixinha: ${existing.name}`,
+    created_by: userId || null,
   })
-  if (txError) console.error('Erro ao registrar transferência para caixinha:', txError.message)
 
   invalidateCache()
   revalidatePath('/')
@@ -582,14 +511,11 @@ export async function withdrawFromCaixinha(formData: FormData) {
     }
   }
 
-  const updated: Caixinha = applyInvestmentMovement(
-    {
-      ...existing,
-      current_balance: existing.current_balance - amount,
-      updated_at: new Date().toISOString(),
-    },
-    { type: 'withdraw', amount }
-  )
+  const updated: Caixinha = {
+    ...existing,
+    current_balance: existing.current_balance - amount,
+    updated_at: new Date().toISOString(),
+  }
 
   const supabase = createAdminClient()
   const { error } = await supabase.from('audit_logs').insert({
@@ -606,15 +532,15 @@ export async function withdrawFromCaixinha(formData: FormData) {
 
   // Registrar entrada de volta na conta bancária a partir da caixinha
   const today = new Date().toISOString().split('T')[0]
-  const { error: txError } = await supabase.from('financial_transactions').insert({
+  await supabase.from('financial_transactions').insert({
     type: 'income',
     amount: amount,
     status: 'paid',
     due_date: today,
     paid_date: today,
     description: `Resgate da Caixinha: ${existing.name}`,
+    created_by: userId || null,
   })
-  if (txError) console.error('Erro ao registrar resgate da caixinha:', txError.message)
 
   invalidateCache()
   revalidatePath('/')
